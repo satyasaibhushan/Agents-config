@@ -1,0 +1,5 @@
+.DS_Store
+**/.DS_Store
+MCPs/.env.local
+MCPs/backups/
+MCPs/generated/

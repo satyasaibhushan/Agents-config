@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "servers": {
+    "browser-tools": {
+      "clients": ["cursor"],
+      "config": {
+        "command": "npx",
+        "args": ["-y", "@agentdeskai/browser-tools-mcp@1.2.0"]
+      }
+    },
+    "Figma": {
+      "clients": ["cursor"],
+      "config": {
+        "url": "http://127.0.0.1:3845/mcp"
+      }
+    },
+    "db-mcp": {
+      "clients": ["cursor", "claude-code", "claude-desktop", "codex"],
+      "config": {
+        "type": "stdio",
+        "command": "/Users/satyasaibhushan/Code/Personal/DB-MCP/.venv/bin/db-mcp",
+        "args": [],
+        "env": {}
+      }
+    },
+    "new-relic": {
+      "clients": ["cursor", "claude-code", "codex"],
+      "config": {
+        "type": "http",
+        "url": "https://mcp.newrelic.com/mcp/",
+        "headers": {
+          "api-key": "${NEW_RELIC_API_KEY}"
+        }
+      },
+      "codex": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "mcp-remote",
+          "https://mcp.newrelic.com/mcp/",
+          "--header",
+          "api-key:${NEW_RELIC_API_KEY}"
+        ]
+      }
+    },
+    "jira-attachments": {
+      "clients": ["cursor", "claude-code", "claude-desktop", "codex"],
+      "config": {
+        "command": "/opt/homebrew/opt/python@3.13/bin/python3.13",
+        "args": [
+          "/Users/satyasaibhushan/Code/Personal/jira-attachment-downloader/mcp_server.py"
+        ],
+        "env": {
+          "JIRA_AGENT_MCP_ENV": "/Users/satyasaibhushan/Agents/Config/MCPs/.env.local"
+        }
+      },
+      "codex": {
+        "enabled": true
+      }
+    },
+    "gmail": {
+      "clients": ["claude-code"],
+      "config": {
+        "type": "stdio",
+        "command": "/Users/satyasaibhushan/.local/bin/gmail-mcp",
+        "args": [],
+        "env": {}
+      }
+    },
+    "sqrl": {
+      "clients": ["codex"],
+      "codex": {
+        "command": "sqrl",
+        "args": ["serve", "--project", "UAT"]
+      }
+    }
+  }
+}
