@@ -24,7 +24,7 @@
       }
     },
     "new-relic": {
-      "clients": ["cursor", "claude-code", "codex"],
+      "clients": ["cursor", "claude-code", "claude-desktop", "codex"],
       "config": {
         "type": "http",
         "url": "https://mcp.newrelic.com/mcp/",
@@ -33,6 +33,16 @@
         }
       },
       "codex": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "mcp-remote",
+          "https://mcp.newrelic.com/mcp/",
+          "--header",
+          "api-key:${NEW_RELIC_API_KEY}"
+        ]
+      },
+      "claude-desktop": {
         "command": "npx",
         "args": [
           "-y",
@@ -59,7 +69,7 @@
       }
     },
     "gmail": {
-      "clients": ["claude-code"],
+      "clients": ["claude-code", "claude-desktop"],
       "config": {
         "type": "stdio",
         "command": "/Users/satyasaibhushan/.local/bin/gmail-mcp",
@@ -68,8 +78,8 @@
       }
     },
     "sqrl": {
-      "clients": ["codex"],
-      "codex": {
+      "clients": ["codex", "claude-desktop"],
+      "config": {
         "command": "sqrl",
         "args": ["serve", "--project", "UAT"]
       }

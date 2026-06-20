@@ -64,13 +64,21 @@ def json_config_for_client(servers, client, env):
         if client not in entry.get("clients", []):
             continue
 
-        config = substitute(dict(entry.get("config", {})), env)
+        config = dict(entry.get("config", {}))
+        config.update(entry.get(client, {}))  # optional per-client override block
+        config = substitute(config, env)
 
         if client == "cursor" and config.get("type") == "http":
             config.pop("type", None)
 
         if client == "claude-desktop":
             config.pop("type", None)
+            # Claude Desktop only supports stdio servers. When a command-based
+            # override is supplied (e.g. an mcp-remote bridge), drop the remote
+            # transport keys so the entry is a valid stdio config.
+            if "command" in config:
+                config.pop("url", None)
+                config.pop("headers", None)
 
         mcp_servers[name] = config
 
