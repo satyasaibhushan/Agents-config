@@ -83,19 +83,6 @@
         "command": "sqrl",
         "args": ["serve", "--project", "UAT"]
       }
-    },
-    "macos-automator": {
-      "clients": ["cursor", "claude-code", "claude-desktop", "codex"],
-      "config": {
-        "type": "stdio",
-        "command": "npx",
-        "args": [
-          "-y",
-          "--package",
-          "@steipete/macos-automator-mcp@0.4.3",
-          "macos-automator-mcp"
-        ]
-      }
     }
   }
 }
