@@ -13,46 +13,22 @@ Skills/<skill-name>/SKILL.md
 Clone or copy this repository to:
 
 ```text
-~/Agents/Skills
+~/Agents/Config
 ```
 
 Then create per-skill symlinks into each agent's skill directory:
 
 ```bash
-canonical="$HOME/Agents/Skills/Skills"
-
-mkdir -p \
-  "$HOME/.agents/skills" \
-  "$HOME/.claude/skills" \
-  "$HOME/.codex/skills" \
-  "$HOME/.cursor/skills"
-
-for dest in \
-  "$HOME/.agents/skills" \
-  "$HOME/.claude/skills" \
-  "$HOME/.codex/skills" \
-  "$HOME/.cursor/skills"
-do
-  for skill_dir in "$canonical"/*; do
-    [ -d "$skill_dir" ] || continue
-    name="${skill_dir##*/}"
-    target="$dest/$name"
-
-    if [ -L "$target" ] && [ "$(readlink "$target")" = "$skill_dir" ]; then
-      continue
-    fi
-
-    if [ -e "$target" ] || [ -L "$target" ]; then
-      echo "Skip existing non-canonical skill: $target"
-      continue
-    fi
-
-    ln -s "$skill_dir" "$target"
-  done
-done
+~/Agents/Config/Skills/scripts/apply-skills.sh
 ```
 
 This intentionally creates symlinks for individual skills only. Do not replace an entire agent-managed skills directory with one symlink.
+
+The apply script backs up replaced symlinks under:
+
+```text
+~/Agents/Config/Skills/backups/<timestamp>/
+```
 
 ## Add Or Update A Skill
 
@@ -63,6 +39,19 @@ Skills/<skill-name>/SKILL.md
 ```
 
 After pulling updates on another machine, rerun the replication commands above. Existing canonical symlinks are left alone, and existing non-canonical skill folders are skipped.
+
+To import a skill from GitHub into the canonical folder:
+
+```bash
+python3 ~/Agents/Config/Skills/scripts/generate-skill-from-github.py \
+  https://github.com/<owner>/<repo>/tree/<ref>/<path/to/skill>
+```
+
+Then apply the symlinks:
+
+```bash
+~/Agents/Config/Skills/scripts/apply-skills.sh
+```
 
 Notes:
 
