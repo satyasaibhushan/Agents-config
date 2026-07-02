@@ -16,13 +16,16 @@ Clone or copy this repository to:
 ~/Agents/Config
 ```
 
-Then create per-skill symlinks into each agent's skill directory:
+Then link skills into each agent's skill directory with the reconciling apply:
 
 ```bash
-~/Agents/Config/Skills/scripts/apply-skills.sh
+python3 ~/Agents/Config/scripts/apply.py --only skills          # interactive
+python3 ~/Agents/Config/scripts/apply.py --plan --only skills   # read-only drift report
 ```
 
-This intentionally creates symlinks for individual skills only. Do not replace an entire agent-managed skills directory with one symlink.
+Beyond linking, it detects drift: skills that exist live but not in canon can be imported (**keep**) or removed (**overwrite**); a symlink someone replaced with an edited real folder can have its edits imported into canon and relinked, or be reverted. See the root README for the full model. The legacy one-way `Skills/scripts/apply-skills.sh` still works for plain linking.
+
+Both intentionally create symlinks for individual skills only. Do not replace an entire agent-managed skills directory with one symlink.
 
 The apply script backs up replaced symlinks under:
 

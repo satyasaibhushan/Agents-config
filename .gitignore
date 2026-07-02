@@ -3,3 +3,5 @@
 MCPs/.env.local
 MCPs/backups/
 MCPs/generated/
+Skills/backups/
+__pycache__/
