@@ -25,6 +25,7 @@ python3 ~/Agents/Config/scripts/apply.py --only mcps     # or --only skills
 - **Reconcile** groups drifted items by distinct version: an identical change made in three agents is one decision, not three. Verbs per version: **promote** (live version becomes the canonical base for every provider), **keep** (import as-is, or as a per-client override via the existing `codex:` / `claude-desktop:` keys), **overwrite** (regenerate from canonical), **skip** (leave both, re-ask next apply).
 - **Preview** recomputes the whole item row before writing — including the ripple where a promote rewrites providers that were in sync with the old base. Zero writes happen before you confirm; every touched file is backed up under `MCPs/backups/<timestamp>/` or `Skills/backups/<timestamp>/`.
 - **Secrets** never enter the repo: on import/promote, literal values from `MCPs/.env.local` are reverse-substituted back into `${VAR}` placeholders, and all previews are masked.
+- **Per-skill targeting**: a sparse `Skills/skills.json` manifest mirrors the MCP `clients` key — a skill absent from it targets every agent. Reconcile decisions (keep here / stop targeting / target this agent) rewrite it on confirm; see `Skills/README.md`.
 
 App-managed items (e.g. Codex's own `node_repl` MCP) are on an ignore list — planning skips them and writes round-trip them untouched.
 

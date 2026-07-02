@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reconciling apply for Agent-config (AC-1).
+"""Reconciling apply for Agent-config (AC-1 + AC-2 per-skill targeting).
 
 One verb: fetch -> plan -> reconcile -> preview -> write.
 
@@ -18,6 +18,11 @@ detect     secrets from MCPs/.env.local are never written into servers.json --
 preview    recomputes every affected item row (including promote ripple onto
            providers that were in sync with the old base) before anything is
            written. Zero writes before confirm; backups always.
+targeting  skills mirror the MCP `clients` key via Skills/skills.json:
+             {"version": 1, "skills": {"<name>": {"clients": ["claude-code"]}}}
+           The manifest is sparse -- a skill absent from it targets every agent.
+           Reconcile decisions (keep here / stop targeting / target this agent)
+           rewrite the manifest on confirm.
 
 Usage:
   apply.py                interactive reconcile + apply
@@ -41,6 +46,7 @@ MCPS_ROOT = CONFIG_ROOT / "MCPs"
 SERVERS_PATH = MCPS_ROOT / "servers.json"
 SKILLS_ROOT = CONFIG_ROOT / "Skills"
 CANONICAL_SKILLS = SKILLS_ROOT / "Skills"
+SKILLS_MANIFEST = SKILLS_ROOT / "skills.json"
 
 MCP_CLIENTS = ["cursor", "claude-code", "claude-desktop", "codex"]
 SKILL_AGENTS = {
@@ -188,6 +194,40 @@ def plan_mcps(genmod, servers, env, home):
 
 # ---------------------------------------------------------------- fetch: skills
 
+def load_skill_targets():
+    """Skills/skills.json -> {name: [agents]}. Sparse: a skill absent from the
+    manifest targets every agent (so no manifest means AC-1 behavior)."""
+    if not SKILLS_MANIFEST.exists():
+        return {}
+    try:
+        data = json.loads(SKILLS_MANIFEST.read_text())
+    except Exception as exc:
+        sys.exit(f"error: cannot parse {SKILLS_MANIFEST}: {exc}")
+    targets = {}
+    for name, entry in (data.get("skills") or {}).items():
+        clients = entry.get("clients", [])
+        unknown = [c for c in clients if c not in SKILL_AGENTS]
+        if unknown:
+            sys.exit(f"error: skills.json: {name}: unknown client(s): {', '.join(unknown)}")
+        targets[name] = clients
+    return targets
+
+
+def skill_clients(name, targets):
+    return targets.get(name, list(SKILL_AGENTS))
+
+
+def write_skill_targets(targets):
+    manifest = {
+        "version": 1,
+        "skills": {
+            name: {"clients": clients}
+            for name, clients in sorted(targets.items(), key=lambda kv: kv[0].lower())
+        },
+    }
+    SKILLS_MANIFEST.write_text(json.dumps(manifest, indent=2) + "\n")
+
+
 def dir_digest(path):
     digest = hashlib.sha256()
     for file in sorted(p for p in Path(path).rglob("*") if p.is_file()):
@@ -198,8 +238,9 @@ def dir_digest(path):
     return digest.hexdigest()
 
 
-def plan_skills(home):
-    """-> {name: {agent: cell}} with skill states per agent directory."""
+def plan_skills(home, targets):
+    """-> {name: {agent: cell}} with skill states per agent directory.
+    targets: Skills/skills.json content — absent skill = targets every agent."""
     canonical = {
         p.name: p for p in sorted(CANONICAL_SKILLS.iterdir())
         if p.is_dir() and not p.name.startswith(".")
@@ -217,10 +258,20 @@ def plan_skills(home):
                     continue
                 seen.add(name)
                 cell = classify_skill(target, canonical.get(name))
-                if cell:
-                    items.setdefault(name, {})[agent] = cell
+                if cell is None:
+                    continue
+                if (name in canonical and cell["state"] != FOREIGN
+                        and agent not in skill_clients(name, targets)):
+                    # in canonical, present live, but this agent isn't targeted
+                    cell = {
+                        "state": UNTARGETED,
+                        "kind": "dir" if cell["state"] == UNLINKED else "link",
+                        "identical": cell.get("identical", True),
+                        "path": str(target),
+                    }
+                items.setdefault(name, {})[agent] = cell
         for name in canonical:
-            if name not in seen:
+            if name not in seen and agent in skill_clients(name, targets):
                 items.setdefault(name, {})[agent] = {"state": MISSING}
 
     # drop rows where every agent is in sync
@@ -408,10 +459,23 @@ def reconcile_mcps(items, servers, secret_map):
     return new_servers, resolutions, skipped
 
 
-def reconcile_skills(items, canonical, home):
-    """-> (ops, skipped). ops: (action, name, agent_or_None, src, dest)."""
+def reconcile_skills(items, canonical, targets, home):
+    """-> (ops, new_targets, skipped). ops: (action, name, agent_or_None, src, dest).
+    new_targets is the (possibly rewritten) Skills/skills.json content."""
     ops = []
     skipped = []
+    new_targets = {name: list(clients) for name, clients in targets.items()}
+
+    def clients_of(name):
+        return new_targets.get(name, list(SKILL_AGENTS))
+
+    def set_clients(name, clients):
+        ordered = [a for a in SKILL_AGENTS if a in clients]
+        if ordered == list(SKILL_AGENTS):
+            new_targets.pop(name, None)  # all agents = the sparse default
+        else:
+            new_targets[name] = ordered
+
     drifted = [
         (name, cells) for name, cells in items.items()
         if any(c["state"] in DRIFT_STATES for c in cells.values())
@@ -436,21 +500,42 @@ def reconcile_skills(items, canonical, home):
                 src = Path(added[agents[0]]["path"])
                 print(f"  added in {', '.join(agents)}: {src}")
                 choice = ask("", {
-                    "k": "keep — import into canonical and symlink into every agent",
+                    "k": "keep — import into canonical, target ALL agents",
+                    "t": f"keep here — import, target only: {', '.join(agents)}",
                     "o": "overwrite — remove it from the agent(s) (backed up)",
                     "s": "skip",
                 })
-                if choice == "k":
+                if choice in ("k", "t"):
                     ops.append(("import", name, None, src, CANONICAL_SKILLS / name))
-                    for agent, rel in SKILL_AGENTS.items():
+                    chosen = list(SKILL_AGENTS) if choice == "k" else agents
+                    set_clients(name, chosen)
+                    for agent in chosen:
                         ops.append(("link", name, agent, CANONICAL_SKILLS / name,
-                                    home / rel / name))
+                                    home / SKILL_AGENTS[agent] / name))
                 elif choice == "o":
                     for agent in agents:
                         ops.append(("remove", name, agent, None,
                                     Path(added[agent]["path"])))
                 else:
                     skipped.append((name, agents, ADDED))
+
+        missing = [a for a, c in cells.items() if c["state"] == MISSING]
+        if missing and name in canonical:
+            show_header()
+            print(f"  missing in {', '.join(missing)} (canonical targets them)")
+            choice = ask("", {
+                "o": "overwrite — link from canonical",
+                "k": "keep — stop targeting these agent(s) (Skills/skills.json)",
+                "s": "skip",
+            })
+            if choice == "o":
+                for agent in missing:
+                    ops.append(("link", name, agent, CANONICAL_SKILLS / name,
+                                home / SKILL_AGENTS[agent] / name))
+            elif choice == "k":
+                set_clients(name, [a for a in clients_of(name) if a not in missing])
+            else:
+                skipped.append((name, missing, MISSING))
 
         for agent, cell in cells.items():
             if cell["state"] == UNLINKED:
@@ -480,15 +565,38 @@ def reconcile_skills(items, canonical, home):
                         ops.append(("link", name, agent, CANONICAL_SKILLS / name, target))
                     else:
                         skipped.append((name, [agent], UNLINKED))
-            elif cell["state"] == MISSING and name in canonical:
-                # non-destructive: always offered, applied on confirm
-                ops.append(("link", name, agent, CANONICAL_SKILLS / name,
-                            home / SKILL_AGENTS[agent] / name))
+            elif cell["state"] == UNTARGETED:
+                show_header()
+                target = home / SKILL_AGENTS[agent] / name
+                detail = "canonical symlink" if cell["kind"] == "link" else (
+                    "real copy, identical" if cell["identical"]
+                    else "real copy, content DIFFERS from canonical")
+                print(f"  present in {agent} ({detail}), but canonical does not target it")
+                keep_label = "keep — target this agent in Skills/skills.json"
+                if cell["kind"] == "dir":
+                    keep_label += (", relink the copy" if cell["identical"] else
+                                   "; edits go into canonical (ALL agents), then relink")
+                choice = ask("", {
+                    "k": keep_label,
+                    "o": "overwrite — remove it from the agent (backed up)",
+                    "s": "skip",
+                })
+                if choice == "k":
+                    set_clients(name, clients_of(name) + [agent])
+                    if cell["kind"] == "dir":
+                        if not cell["identical"]:
+                            ops.append(("import", name, None, target,
+                                        CANONICAL_SKILLS / name))
+                        ops.append(("link", name, agent, CANONICAL_SKILLS / name, target))
+                elif choice == "o":
+                    ops.append(("remove", name, agent, None, target))
+                else:
+                    skipped.append((name, [agent], UNTARGETED))
             elif cell["state"] == FOREIGN:
                 show_header()
                 print(f"  {agent}: symlink points elsewhere ({cell['dest']}) — left alone")
 
-    return ops, skipped
+    return ops, new_targets, skipped
 
 
 # ---------------------------------------------------------------- preview + write
@@ -649,12 +757,14 @@ def main():
     secret_map = build_secret_map(env)
     home = args.home
 
+    skill_targets = load_skill_targets()
+
     mcp_items, live_all = ({}, {c: {} for c in MCP_CLIENTS})
     skill_items, canonical_skills = ({}, {})
     if args.only != "skills":
         mcp_items, live_all = plan_mcps(genmod, servers, env, home)
     if args.only != "mcps":
-        skill_items, canonical_skills = plan_skills(home)
+        skill_items, canonical_skills = plan_skills(home, skill_targets)
 
     if args.plan and args.json:
         emit_json_plan(
@@ -682,12 +792,15 @@ def main():
     if mcp_drift:
         new_servers, resolutions, mcp_skipped = reconcile_mcps(
             mcp_drift, servers, secret_map)
-    skill_ops, skill_skipped = ([], [])
+    skill_ops, new_skill_targets, skill_skipped = ([], skill_targets, [])
     if skill_drift:
-        skill_ops, skill_skipped = reconcile_skills(skill_drift, canonical_skills, home)
+        skill_ops, new_skill_targets, skill_skipped = reconcile_skills(
+            skill_drift, canonical_skills, skill_targets, home)
 
     # ---- effect preview (recomputed rows, including promote ripple)
-    final = final_mcp_state(genmod, new_servers, env, live_all, resolutions, mcp_items)
+    # out-of-scope MCPs (--only skills) must stay exactly live: never regenerate
+    final = final_mcp_state(genmod, new_servers, env, live_all, resolutions, mcp_items) \
+        if args.only != "skills" else live_all
     print("\nEFFECT PREVIEW")
     any_change = False
     for client in MCP_CLIENTS:
@@ -708,6 +821,14 @@ def main():
         target = f" @ {agent}" if agent else ""
         print(f"  skill {action}: {name}{target}")
         any_change = True
+    if new_skill_targets != skill_targets:
+        any_change = True
+        print("  Skills/skills.json: targeting updated")
+        for name in sorted(set(skill_targets) | set(new_skill_targets), key=str.lower):
+            old = skill_targets.get(name, list(SKILL_AGENTS))
+            new = new_skill_targets.get(name, list(SKILL_AGENTS))
+            if old != new:
+                print(f"    {name}: {', '.join(old)} -> {', '.join(new) or '(no agents)'}")
     for name, clients, state in mcp_skipped + skill_skipped:
         print(f"  skipped: {name} ({state} in {', '.join(clients)}) — will re-ask next apply")
     if not any_change:
@@ -727,10 +848,15 @@ def main():
             json.dumps({"version": 1, "servers": new_servers}, indent=2) + "\n")
     changed_clients = write_mcp_configs(final, live_all, home, genmod, stamp)
     applied_skills = apply_skill_ops(skill_ops, stamp)
+    if new_skill_targets != skill_targets:
+        backup(SKILLS_MANIFEST, SKILLS_ROOT, stamp)
+        write_skill_targets(new_skill_targets)
 
     print("\nSUMMARY")
     if norm(new_servers) != norm(servers):
         print(f"  canonical: servers.json updated — review: git -C {CONFIG_ROOT} diff")
+    if new_skill_targets != skill_targets:
+        print("  canonical: Skills/skills.json updated (per-skill targeting)")
     if changed_clients:
         print(f"  providers rewritten: {', '.join(changed_clients)}")
     for action, name, agent in applied_skills:
