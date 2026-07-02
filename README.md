@@ -3,9 +3,10 @@
 This repository is the canonical local configuration source for agent tooling.
 
 ```text
-Skills/    Custom/shared agent skills
-MCPs/      Canonical MCP server definitions and sync scripts
-scripts/   apply.py — the reconciling apply for MCPs and skills
+Skills/         Custom/shared agent skills
+MCPs/           Canonical MCP server definitions and sync scripts
+Instructions/   Canonical agent instructions (CLAUDE.md / AGENTS.md)
+scripts/        apply.py — the reconciling apply for all of the above
 ```
 
 Nothing in this repository should contain credentials. Use environment variables or local ignored files for secrets.
@@ -18,7 +19,7 @@ Nothing in this repository should contain credentials. Use environment variables
 python3 ~/Agents/Config/scripts/apply.py            # full interactive apply
 python3 ~/Agents/Config/scripts/apply.py --plan     # read-only drift report
 python3 ~/Agents/Config/scripts/apply.py --plan --json   # machine-readable matrix
-python3 ~/Agents/Config/scripts/apply.py --only mcps     # or --only skills
+python3 ~/Agents/Config/scripts/apply.py --only mcps     # or skills / instructions
 ```
 
 - **Fetch/plan** normalizes every agent's live config into an item × provider matrix. Each cell is one of: `in sync`, `added` (live-only item), `modified`, `missing`, `unlinked` (skill symlink replaced by an edited folder), `untargeted` (present live but provider not in the canonical `clients` list), or `foreign` (symlink pointing elsewhere — reported only).
@@ -26,6 +27,7 @@ python3 ~/Agents/Config/scripts/apply.py --only mcps     # or --only skills
 - **Preview** recomputes the whole item row before writing — including the ripple where a promote rewrites providers that were in sync with the old base. Zero writes happen before you confirm; every touched file is backed up under `MCPs/backups/<timestamp>/` or `Skills/backups/<timestamp>/`.
 - **Secrets** never enter the repo: on import/promote, literal values from `MCPs/.env.local` are reverse-substituted back into `${VAR}` placeholders, and all previews are masked.
 - **Per-skill targeting**: a sparse `Skills/skills.json` manifest mirrors the MCP `clients` key — a skill absent from it targets every agent. Reconcile decisions (keep here / stop targeting / target this agent) rewrite it on confirm; see `Skills/README.md`.
+- **Instructions**: `Instructions/instructions.yaml` maps each provider to its live instructions file (`~/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/AGENTS.md`), all rendered from the shared `Instructions/AGENTS.md` until a provider diverges into its own source file via the **keep** verb; see `Instructions/README.md`.
 
 App-managed items (e.g. Codex's own `node_repl` MCP) are on an ignore list — planning skips them and writes round-trip them untouched.
 

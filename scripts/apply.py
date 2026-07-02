@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reconciling apply for Agent-config (AC-1 + AC-2 per-skill targeting).
+"""Reconciling apply for Agent-config (AC-1..AC-3).
 
 One verb: fetch -> plan -> reconcile -> preview -> write.
 
@@ -23,15 +23,26 @@ targeting  skills mirror the MCP `clients` key via Skills/skills.json:
            The manifest is sparse -- a skill absent from it targets every agent.
            Reconcile decisions (keep here / stop targeting / target this agent)
            rewrite the manifest on confirm.
+instructions (AC-3)
+           Instructions/instructions.yaml maps provider -> instructions file:
+             targets:
+               claude-code:
+                 path: ~/CLAUDE.md
+                 source: AGENTS.md   # optional; defaults to default_source
+           Every provider renders from the shared Instructions/AGENTS.md until
+           a reconcile decision (keep = diverge) points its `source` at a
+           per-provider file. Same verbs as MCPs: promote / keep / overwrite /
+           skip, with promote rippling to every provider on the same source.
 
 Usage:
   apply.py                interactive reconcile + apply
   apply.py --plan         print the drift matrix and exit (read-only)
   apply.py --plan --json  machine-readable plan (for the control plane later)
-  apply.py --only mcps    limit to MCP servers (or: --only skills)
+  apply.py --only mcps    limit scope (or: --only skills / --only instructions)
 """
 
 import argparse
+import difflib
 import hashlib
 import importlib.util
 import json
@@ -47,6 +58,8 @@ SERVERS_PATH = MCPS_ROOT / "servers.json"
 SKILLS_ROOT = CONFIG_ROOT / "Skills"
 CANONICAL_SKILLS = SKILLS_ROOT / "Skills"
 SKILLS_MANIFEST = SKILLS_ROOT / "skills.json"
+INSTRUCTIONS_ROOT = CONFIG_ROOT / "Instructions"
+INSTRUCTIONS_MANIFEST = INSTRUCTIONS_ROOT / "instructions.yaml"
 
 MCP_CLIENTS = ["cursor", "claude-code", "claude-desktop", "codex"]
 SKILL_AGENTS = {
@@ -293,6 +306,195 @@ def classify_skill(target, canonical_path):
             return {"state": UNLINKED, "identical": identical, "path": str(target)}
         return {"state": ADDED, "path": str(target), "digest": dir_digest(target)}
     return None  # stray file; not a skill
+
+
+# ---------------------------------------------------------------- fetch: instructions
+
+def load_yaml_subset(text):
+    """Minimal YAML: nested mappings of scalar strings, comments. That is all
+    instructions.yaml needs, and it keeps the repo dependency-free."""
+    root = {}
+    stack = [(-1, root)]
+    for raw in text.splitlines():
+        line = raw.split(" #", 1)[0].rstrip()
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip())
+        key, sep, value = line.strip().partition(":")
+        if not sep:
+            sys.exit(f"error: {INSTRUCTIONS_MANIFEST}: cannot parse line: {raw!r}")
+        value = value.strip().strip("'\"")
+        while stack and indent <= stack[-1][0]:
+            stack.pop()
+        parent = stack[-1][1]
+        if value == "":
+            parent[key] = {}
+            stack.append((indent, parent[key]))
+        else:
+            parent[key] = value
+    return root
+
+
+def load_instruction_targets():
+    """-> ({provider: {"path": "~/...", "source": "<file>"}}, default_source).
+    Paths are stored with ~/ and expanded against --home at use time."""
+    if not INSTRUCTIONS_MANIFEST.exists():
+        return {}, "AGENTS.md"
+    data = load_yaml_subset(INSTRUCTIONS_MANIFEST.read_text())
+    default_source = data.get("default_source", "AGENTS.md")
+    targets = {}
+    for provider, entry in (data.get("targets") or {}).items():
+        if not isinstance(entry, dict) or "path" not in entry:
+            sys.exit(f"error: instructions.yaml: {provider}: needs a path")
+        targets[provider] = {
+            "path": entry["path"],
+            "source": entry.get("source", default_source),
+        }
+    return targets, default_source
+
+
+def write_instruction_targets(targets, default_source):
+    lines = [
+        "# Which instructions file belongs to which provider.",
+        "# `source` is relative to Instructions/ and defaults to default_source --",
+        "# point a provider at its own file (source: codex.md) to diverge it.",
+        "# NOTE: hand-written comments below this header are lost when apply",
+        "# rewrites this file.",
+        "version: 1",
+        f"default_source: {default_source}",
+        "targets:",
+    ]
+    for provider in sorted(targets, key=str.lower):
+        entry = targets[provider]
+        lines.append(f"  {provider}:")
+        lines.append(f"    path: {entry['path']}")
+        if entry.get("source", default_source) != default_source:
+            lines.append(f"    source: {entry['source']}")
+    INSTRUCTIONS_MANIFEST.write_text("\n".join(lines) + "\n")
+
+
+def instruction_path(entry, home):
+    path = entry["path"]
+    return home / path[2:] if path.startswith("~/") else Path(path)
+
+
+def plan_instructions(targets, home):
+    """-> {provider: {state, live, desired, path, source}}."""
+    items = {}
+    for provider, entry in targets.items():
+        source_path = INSTRUCTIONS_ROOT / entry["source"]
+        if not source_path.exists():
+            sys.exit(f"error: instructions.yaml: {provider}: "
+                     f"source Instructions/{entry['source']} does not exist")
+        desired = source_path.read_text()
+        path = instruction_path(entry, home)
+        live = path.read_text() if path.exists() else None
+        state = MISSING if live is None else IN_SYNC if live == desired else MODIFIED
+        items[provider] = {"state": state, "live": live, "desired": desired,
+                           "path": path, "source": entry["source"]}
+    return items
+
+
+def print_instructions_plan(items):
+    drifted = {p: c for p, c in items.items() if c["state"] != IN_SYNC}
+    print(f"\nINSTRUCTIONS DRIFT PLAN — {len(drifted)} file(s) need attention")
+    if not drifted:
+        return drifted
+    width = max(len(p) for p in drifted) + 2
+    pwidth = max(len(str(c["path"])) for c in drifted.values()) + 2
+    for provider, cell in drifted.items():
+        print("  " + provider.ljust(width) + str(cell["path"]).ljust(pwidth)
+              + STATE_MARK[cell["state"]])
+    return drifted
+
+
+def reconcile_instructions(items, targets, default_source, secret_map):
+    """-> (new_targets, source_updates, resolutions, skipped).
+    source_updates: {relpath under Instructions/: new content}."""
+    new_targets = {p: dict(e) for p, e in targets.items()}
+    source_updates = {}
+    resolutions = {}
+    skipped = []
+
+    drifted = {p: c for p, c in items.items() if c["state"] in (MODIFIED, MISSING)}
+    groups = {}  # identical live edits against the same source -> one decision
+    for provider, cell in drifted.items():
+        if cell["state"] == MODIFIED:
+            groups.setdefault((cell["source"], cell["live"]), []).append(provider)
+    total = len(groups) + sum(1 for c in drifted.values() if c["state"] == MISSING)
+    index = 0
+
+    for (source, live), providers in groups.items():
+        index += 1
+        cell = items[providers[0]]
+        print(f"\n[{index}/{total}] instructions — modified in {', '.join(providers)} "
+              f"(source: Instructions/{source})")
+        diff = list(difflib.unified_diff(
+            cell["desired"].splitlines(), live.splitlines(),
+            fromfile=f"Instructions/{source}", tofile="live", lineterm=""))
+        for line in diff[:80]:
+            print("    " + reverse_substitute(line, secret_map))
+        if len(diff) > 80:
+            print(f"    ... ({len(diff) - 80} more diff lines)")
+        choice = ask("", {
+            "p": f"promote — live becomes Instructions/{source} "
+                 "(ripples to every provider on that source)",
+            "k": "keep — diverge: store as per-provider source file(s)",
+            "o": "overwrite — regenerate from canonical",
+            "s": "skip",
+        })
+        if choice == "p":
+            source_updates[source] = live
+            resolutions.update({p: "sync" for p in providers})
+        elif choice == "k":
+            for provider in providers:
+                relpath = f"{provider}.md"
+                source_updates[relpath] = live
+                new_targets[provider]["source"] = relpath
+                resolutions[provider] = "sync"
+        elif choice == "o":
+            resolutions.update({p: "sync" for p in providers})
+        else:
+            skipped.append(("instructions", providers, MODIFIED))
+
+    for provider, cell in drifted.items():
+        if cell["state"] != MISSING:
+            continue
+        index += 1
+        print(f"\n[{index}/{total}] instructions — missing in {provider} ({cell['path']})")
+        choice = ask("", {
+            "o": "overwrite — write it from canonical",
+            "k": "keep — stop targeting this provider (instructions.yaml)",
+            "s": "skip",
+        })
+        if choice == "o":
+            resolutions[provider] = "sync"
+        elif choice == "k":
+            new_targets.pop(provider, None)
+        else:
+            skipped.append(("instructions", [provider], MISSING))
+
+    return new_targets, source_updates, resolutions, skipped
+
+
+def final_instructions(items, new_targets, source_updates, resolutions, home):
+    """-> [(provider, path, content)] live-file writes, incl. promote ripple."""
+    ops = []
+    for provider, entry in new_targets.items():
+        source_path = INSTRUCTIONS_ROOT / entry["source"]
+        desired = source_updates.get(entry["source"])
+        if desired is None:
+            if not source_path.exists():
+                continue
+            desired = source_path.read_text()
+        cell = items.get(provider)
+        if cell and cell["state"] in (MODIFIED, MISSING) and provider not in resolutions:
+            continue  # skipped: leave both sides alone
+        live = cell["live"] if cell else None
+        if live != desired:
+            path = cell["path"] if cell else instruction_path(entry, home)
+            ops.append((provider, path, desired))
+    return ops
 
 
 # ---------------------------------------------------------------- plan output
@@ -724,7 +926,7 @@ def apply_skill_ops(ops, stamp):
 
 # ---------------------------------------------------------------- main
 
-def emit_json_plan(mcp_items, skill_items, secret_map):
+def emit_json_plan(mcp_items, skill_items, instr_items, secret_map):
     def cells_out(items, mask_live):
         out = {}
         for name, cells in items.items():
@@ -740,6 +942,11 @@ def emit_json_plan(mcp_items, skill_items, secret_map):
     print(json.dumps({
         "mcps": cells_out(mcp_items, mask_live=True),
         "skills": cells_out(skill_items, mask_live=False),
+        "instructions": {
+            provider: {"state": cell["state"], "path": str(cell["path"]),
+                       "source": cell["source"]}
+            for provider, cell in instr_items.items()
+        },
     }, indent=2))
 
 
@@ -747,9 +954,11 @@ def main():
     parser = argparse.ArgumentParser(description="Reconciling apply for Agent-config")
     parser.add_argument("--plan", action="store_true", help="show drift and exit")
     parser.add_argument("--json", action="store_true", help="with --plan: JSON output")
-    parser.add_argument("--only", choices=["mcps", "skills"], help="limit scope")
+    parser.add_argument("--only", choices=["mcps", "skills", "instructions"],
+                        help="limit scope")
     parser.add_argument("--home", type=Path, default=Path.home(), help=argparse.SUPPRESS)
     args = parser.parse_args()
+    in_scope = lambda section: args.only in (None, section)
 
     genmod = load_genmod()
     servers = genmod.load_servers()
@@ -758,28 +967,34 @@ def main():
     home = args.home
 
     skill_targets = load_skill_targets()
+    instr_targets, default_source = load_instruction_targets()
 
     mcp_items, live_all = ({}, {c: {} for c in MCP_CLIENTS})
     skill_items, canonical_skills = ({}, {})
-    if args.only != "skills":
+    instr_items = {}
+    if in_scope("mcps"):
         mcp_items, live_all = plan_mcps(genmod, servers, env, home)
-    if args.only != "mcps":
+    if in_scope("skills"):
         skill_items, canonical_skills = plan_skills(home, skill_targets)
+    if in_scope("instructions"):
+        instr_items = plan_instructions(instr_targets, home)
 
     if args.plan and args.json:
         emit_json_plan(
             {n: c for n, c in mcp_items.items()
              if any(x["state"] != IN_SYNC for x in c.values())},
-            skill_items, secret_map,
+            skill_items, instr_items, secret_map,
         )
         return
 
     mcp_drift = print_matrix("MCP DRIFT PLAN", mcp_items, MCP_CLIENTS) \
-        if args.only != "skills" else {}
+        if in_scope("mcps") else {}
     skill_drift = print_matrix("SKILL DRIFT PLAN", skill_items, list(SKILL_AGENTS)) \
-        if args.only != "mcps" else {}
+        if in_scope("skills") else {}
+    instr_drift = print_instructions_plan(instr_items) \
+        if in_scope("instructions") else {}
 
-    if not mcp_drift and not skill_drift:
+    if not mcp_drift and not skill_drift and not instr_drift:
         print("\nEverything in sync. Nothing to do.")
         return
     if args.plan:
@@ -796,11 +1011,19 @@ def main():
     if skill_drift:
         skill_ops, new_skill_targets, skill_skipped = reconcile_skills(
             skill_drift, canonical_skills, skill_targets, home)
+    new_instr_targets, source_updates, instr_resolutions, instr_skipped = \
+        (instr_targets, {}, {}, [])
+    if instr_drift:
+        new_instr_targets, source_updates, instr_resolutions, instr_skipped = \
+            reconcile_instructions(instr_items, instr_targets, default_source, secret_map)
 
     # ---- effect preview (recomputed rows, including promote ripple)
-    # out-of-scope MCPs (--only skills) must stay exactly live: never regenerate
+    # out-of-scope MCPs must stay exactly live: never regenerate
     final = final_mcp_state(genmod, new_servers, env, live_all, resolutions, mcp_items) \
-        if args.only != "skills" else live_all
+        if in_scope("mcps") else live_all
+    instr_ops = final_instructions(
+        instr_items, new_instr_targets, source_updates, instr_resolutions, home) \
+        if in_scope("instructions") else []
     print("\nEFFECT PREVIEW")
     any_change = False
     for client in MCP_CLIENTS:
@@ -829,7 +1052,20 @@ def main():
             new = new_skill_targets.get(name, list(SKILL_AGENTS))
             if old != new:
                 print(f"    {name}: {', '.join(old)} -> {', '.join(new) or '(no agents)'}")
-    for name, clients, state in mcp_skipped + skill_skipped:
+    for relpath in sorted(source_updates):
+        any_change = True
+        print(f"  Instructions/{relpath}: updated (review with git diff after apply)")
+    for provider, path, content in instr_ops:
+        any_change = True
+        print(f"  instructions rewrite: {provider} ({path})")
+    if new_instr_targets != instr_targets:
+        any_change = True
+        print("  Instructions/instructions.yaml: targeting updated")
+        for provider in sorted(set(instr_targets) | set(new_instr_targets), key=str.lower):
+            old, new = instr_targets.get(provider), new_instr_targets.get(provider)
+            if old != new:
+                print(f"    {provider}: {old or '(untargeted)'} -> {new or '(untargeted)'}")
+    for name, clients, state in mcp_skipped + skill_skipped + instr_skipped:
         print(f"  skipped: {name} ({state} in {', '.join(clients)}) — will re-ask next apply")
     if not any_change:
         print("  no writes needed.")
@@ -851,17 +1087,35 @@ def main():
     if new_skill_targets != skill_targets:
         backup(SKILLS_MANIFEST, SKILLS_ROOT, stamp)
         write_skill_targets(new_skill_targets)
+    for relpath, content in source_updates.items():
+        path = INSTRUCTIONS_ROOT / relpath
+        backup(path, INSTRUCTIONS_ROOT, stamp)
+        path.write_text(content)
+    for provider, path, content in instr_ops:
+        backup(path, INSTRUCTIONS_ROOT, stamp)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+    if new_instr_targets != instr_targets:
+        backup(INSTRUCTIONS_MANIFEST, INSTRUCTIONS_ROOT, stamp)
+        write_instruction_targets(new_instr_targets, default_source)
 
     print("\nSUMMARY")
     if norm(new_servers) != norm(servers):
         print(f"  canonical: servers.json updated — review: git -C {CONFIG_ROOT} diff")
     if new_skill_targets != skill_targets:
         print("  canonical: Skills/skills.json updated (per-skill targeting)")
+    if source_updates:
+        print(f"  canonical: Instructions/ updated ({', '.join(sorted(source_updates))})"
+              f" — review: git -C {CONFIG_ROOT} diff")
+    if new_instr_targets != instr_targets:
+        print("  canonical: Instructions/instructions.yaml updated")
+    for provider, path, content in instr_ops:
+        print(f"  instructions rewrite: {provider} ({path})")
     if changed_clients:
         print(f"  providers rewritten: {', '.join(changed_clients)}")
     for action, name, agent in applied_skills:
         print(f"  skill {action}: {name}" + (f" @ {agent}" if agent else ""))
-    print(f"  backups: MCPs/backups/{stamp} and Skills/backups/{stamp} (as needed)")
+    print(f"  backups: {{MCPs,Skills,Instructions}}/backups/{stamp} (as needed)")
 
 
 if __name__ == "__main__":

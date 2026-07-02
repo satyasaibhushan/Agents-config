@@ -1,0 +1,14 @@
+# Which instructions file belongs to which provider.
+# `source` is relative to Instructions/ and defaults to default_source --
+# point a provider at its own file (source: codex.md) to diverge it.
+# NOTE: hand-written comments below this header are lost when apply
+# rewrites this file.
+version: 1
+default_source: AGENTS.md
+targets:
+  claude-code:
+    path: ~/CLAUDE.md
+  codex:
+    path: ~/.codex/AGENTS.md
+  cursor:
+    path: ~/AGENTS.md
