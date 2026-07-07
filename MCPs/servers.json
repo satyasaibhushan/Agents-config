@@ -83,6 +83,19 @@
         "command": "sqrl",
         "args": ["serve", "--project", "UAT"]
       }
+    },
+    "devdock": {
+      "clients": ["claude-code", "codex", "claude-desktop"],
+      "config": {
+        "type": "stdio",
+        "command": "node",
+        "args": [
+          "/Users/satyasaibhushan/Code/Personal/devdock/packages/mcp/dist/index.js"
+        ],
+        "env": {
+          "DEVDOCK_MCP_SCOPE": "rw"
+        }
+      }
     }
   }
 }
