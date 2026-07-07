@@ -8,6 +8,7 @@ default_source: AGENTS.md
 targets:
   claude-code:
     path: ~/CLAUDE.md
+    source: claude-code.md
   codex:
     path: ~/.codex/AGENTS.md
   cursor:

@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "skills": {
+    "codex-review": { "clients": ["claude-code"] },
+    "codex-implementation": { "clients": ["claude-code"] },
+    "codex-computer-use": { "clients": ["claude-code"] }
+  }
+}

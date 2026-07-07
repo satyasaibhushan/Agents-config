@@ -53,4 +53,4 @@ To regenerate previews:
 python3 ~/Agents/Config/MCPs/scripts/generate-mcps.py
 ```
 
-To apply, use the reconciling apply above. `MCPs/scripts/apply-mcps.sh` remains as the legacy one-way push (canonical always wins, no drift detection); `scripts/apply.py` supersedes it and reuses `generate-mcps.py` internally, so both always produce identical per-client output.
+To apply, use the reconciling apply above — it reuses `generate-mcps.py` internally, so previews and applied output are always identical.
