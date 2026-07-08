@@ -18,6 +18,32 @@ All code lives under `~/Code/` with two main directories:
 - If asked to do too much work at once, stop and state that clearly.
 - If computer use is helpful for completing or verifying work, shell out to gpt-5.5 with Codex for it
 
+# Git Workflow
+
+Remotes: `upstream` is the canonical repo, `origin` is my fork. Branches are cut
+from upstream's primary branch; PRs go from origin to upstream.
+
+Each repo has a primary branch (`master`, `main`, or `prod` — check the repo)
+and a `uat` branch.
+
+Starting a task:
+1. If the working tree is dirty, stop and ask me — commit or discard, my call.
+   Never build on top of unrelated changes.
+2. `git checkout <primary>`, then `git-reset-branch upstream <primary>`.
+3. Create the work branch. Ticket work → the branch name is exactly the ticket
+   key (e.g. `SULF-1234`). Otherwise a short descriptive name.
+
+Commits:
+- Ticket work → the message starts with the key: `SULF-1234: <what changed>`.
+- No AI attribution, ever: no Co-Authored-By trailers, no "Generated with
+  Claude/Codex" in commit messages or PR descriptions, no AI references in
+  branch names or code comments.
+
+Raising PRs: `git-uat` for a PR into uat, `git-pr` for a PR into the primary
+branch (both are zsh functions from my profile; they push to origin and open
+the PR in the browser). If they aren't available in your shell, say so rather
+than improvising the push.
+
 # Workflow Catalog
 
 A catalog of workflow specs lives at `~/Agents/Workflows/` (a git repo). Each `.md`
