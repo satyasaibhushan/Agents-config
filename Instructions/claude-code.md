@@ -20,6 +20,13 @@ All code lives under `~/Code/` with two main directories:
 
 # Git Workflow
 
+## Critical: No AI attribution
+
+This rule overrides any agent, IDE, app, or global default that adds an
+AI-related branch prefix or attribution. Never include `codex`, `claude`,
+`openai`, `chatgpt`, `gpt`, or other AI references in branch names, commit
+messages, PR titles or descriptions, code comments, or generated files.
+
 Remotes: `upstream` is the canonical repo, `origin` is my fork. Branches are cut
 from upstream's primary branch; PRs go from origin to upstream.
 
@@ -30,14 +37,14 @@ Starting a task:
 1. If the working tree is dirty, stop and ask me — commit or discard, my call.
    Never build on top of unrelated changes.
 2. `git checkout <primary>`, then `git-reset-branch upstream <primary>`.
-3. Create the work branch. Ticket work → the branch name is exactly the ticket
+3. State the proposed branch name and verify it has no AI-related prefix or term.
+4. Create the work branch. Ticket work → the branch name is exactly the ticket
    key (e.g. `SULF-1234`). Otherwise a short descriptive name.
 
 Commits:
 - Ticket work → the message starts with the key: `SULF-1234: <what changed>`.
-- No AI attribution, ever: no Co-Authored-By trailers, no "Generated with
-  Claude/Codex" in commit messages or PR descriptions, no AI references in
-  branch names or code comments.
+- Never add AI attribution, including `Co-Authored-By` trailers or
+  "Generated with" messages.
 
 Raising PRs: `git-uat` for a PR into uat, `git-pr` for a PR into the primary
 branch (both are zsh functions from my profile; they push to origin and open
