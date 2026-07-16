@@ -5,6 +5,20 @@ All code lives under `~/Code/` with two main directories:
 - `~/Code/backend/` — all backend repositories
 - `~/Code/frontend/` — all frontend repositories
 
+# Repo-Local Agent Scripts
+
+Some repos carry agent helper scripts at `<repo>/.agents/scripts/`, grouped by
+area (e.g. `.agents/scripts/vera_debug/`). They are deterministic, read-only
+debugging and inspection tools shared by all agents, and they are gitignored
+globally — never commit them or reference them in team-visible files.
+
+- Before hand-writing a repeated investigation (DB queries, log or audit
+  analysis), check the repo's `.agents/scripts/` for an existing script. Every
+  script documents itself via `--help`.
+- Add new scripts there when a debugging flow is worth repeating. Rules:
+  Python 3 stdlib only, read-only against shared environments, and access data
+  through my MCPs (e.g. DB-MCP) rather than direct credentials.
+
 # Personal Preferences
 
 ## TypeScript
