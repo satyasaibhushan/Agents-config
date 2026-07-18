@@ -553,6 +553,15 @@ class CliTest(ApplyTestCase):
         ], cwd=REPO, env=env, check=True, capture_output=True, text=True)
         self.assertEqual(env_path.stat().st_mode & 0o777, before)
 
+    def test_installed_launcher_symlink_resolves_apply_script(self):
+        launcher = self.tmp / "bin" / "agents-config"
+        launcher.parent.mkdir()
+        launcher.symlink_to(REPO / "scripts" / "agents-config")
+        result = subprocess.run(
+            [str(launcher), "--help"], cwd=REPO,
+            check=True, capture_output=True, text=True)
+        self.assertIn("Reconciling apply", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

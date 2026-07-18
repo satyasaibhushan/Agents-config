@@ -4,7 +4,15 @@
 # falls back to uv, and otherwise stops with a precise message.
 set -eu
 
-SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+SCRIPT=$0
+while [ -L "$SCRIPT" ]; do
+    LINK=$(readlink "$SCRIPT")
+    case "$LINK" in
+        /*) SCRIPT=$LINK ;;
+        *) SCRIPT=$(dirname -- "$SCRIPT")/$LINK ;;
+    esac
+done
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$SCRIPT")" && pwd)
 APPLY="$SCRIPT_DIR/apply.py"
 
 for candidate in python3.13 python3.12 python3.11 python3.14 python3; do
