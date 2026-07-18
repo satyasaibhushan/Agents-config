@@ -891,6 +891,21 @@ def final_instructions(items, new_targets, source_updates, resolutions, home,
     return writes, removals
 
 
+def write_instruction_files(writes, home, stamp):
+    """Write finalized provider instruction files with backups.
+
+    A provider path may be a legacy convenience symlink to another provider's
+    file. Detach it before writing so provider-specific extras cannot overwrite
+    the shared target (or be overwritten by the next provider write).
+    """
+    for provider, path, content in writes:
+        backup(path, home, stamp)
+        if path.is_symlink():
+            path.unlink()
+        private_mkdir(path.parent)
+        path.write_text(content)
+
+
 # ---------------------------------------------------------------- plan output
 
 STATE_MARK = {
@@ -1567,10 +1582,7 @@ def main():
         path = INSTRUCTIONS_ROOT / relpath
         backup(path, home, stamp)
         path.write_text(content)
-    for provider, path, content in instr_ops:
-        backup(path, home, stamp)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content)
+    write_instruction_files(instr_ops, home, stamp)
     for provider, legacy in instr_removals:
         backup(legacy, home, stamp)
         legacy.unlink()

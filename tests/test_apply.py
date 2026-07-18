@@ -267,6 +267,22 @@ class InstructionsPlanTest(ApplyTestCase):
         self.assertEqual(items["codex"]["state"], A.MISSING)
         self.assertEqual(items["codex"]["desired"], "# V1\n")
 
+    def test_provider_write_detaches_symlink_to_another_provider(self):
+        codex = self.write(".codex/AGENTS.md", BASE)
+        claude = self.home / ".claude/CLAUDE.md"
+        claude.parent.mkdir(parents=True)
+        claude.symlink_to(codex)
+        desired_claude = BASE.rstrip("\n") + "\n\n" + EXTRA
+
+        self.apply.write_instruction_files([
+            ("claude-code", claude, desired_claude),
+            ("codex", codex, BASE),
+        ], self.home, "20260718-000003")
+
+        self.assertFalse(claude.is_symlink())
+        self.assertEqual(claude.read_text(), desired_claude)
+        self.assertEqual(codex.read_text(), BASE)
+
     def test_promote_maps_hunks_to_fragments(self):
         desired, spans = self.apply.render_instruction(
             ["fragments/base.md", "providers/claude-code.md"])
