@@ -12,7 +12,8 @@ reconcile  walks drifted items grouped by distinct version. Verbs:
              keep      import into canonical (per-client override for modified)
              overwrite regenerate the provider from canonical
              skip      leave both sides, re-ask next apply
-detect     secrets from MCPs/.env.local are never written into servers.json --
+detect     secrets from ~/.config/agents-config/mcp.env (legacy MCPs/.env.local)
+           are never written into servers.json --
            literal values are reverse-substituted back to ${VAR} placeholders,
            and masked in all output.
 preview    recomputes every affected item row (including promote ripple onto
@@ -1147,10 +1148,12 @@ def codex_toml_section(final_codex, genmod):
     return "\n".join(lines)
 
 
-def backup(path, root, stamp):
+def backup(path, home, stamp):
+    """Copy path into ~/.local/state/agents-config/backups/<stamp>/ (0700 dirs:
+    backed-up provider configs carry resolved secrets)."""
     if path.exists() or path.is_symlink():
-        dest = root / "backups" / stamp / str(path).lstrip("/")
-        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest = state_dir(home) / "backups" / stamp / str(path).lstrip("/")
+        private_mkdir(dest.parent)
         if path.is_dir() and not path.is_symlink():
             shutil.copytree(path, dest, symlinks=True)
         else:
@@ -1164,7 +1167,7 @@ def write_mcp_configs(final, live_all, home, genmod, stamp):
         if norm(final[client]) == norm(live_all[client]):
             continue
         path = paths[client]
-        backup(path, MCPS_ROOT, stamp)
+        backup(path, home, stamp)
         path.parent.mkdir(parents=True, exist_ok=True)
         if client == "cursor":
             path.write_text(json.dumps({"mcpServers": final[client]}, indent=2) + "\n")
@@ -1185,12 +1188,12 @@ def write_mcp_configs(final, live_all, home, genmod, stamp):
     return changed
 
 
-def apply_skill_ops(ops, stamp):
+def apply_skill_ops(ops, home, stamp):
     applied = []
     for action, name, agent, src, dest in ops:
         if action == "import":
             if dest.exists():
-                backup(dest, SKILLS_ROOT, stamp)
+                backup(dest, home, stamp)
                 shutil.rmtree(dest)
             shutil.copytree(src, dest, symlinks=True,
                             ignore=shutil.ignore_patterns(".DS_Store"))
@@ -1198,7 +1201,7 @@ def apply_skill_ops(ops, stamp):
             if dest.is_symlink() and dest.resolve() == src.resolve():
                 continue
             if dest.exists() or dest.is_symlink():
-                backup(dest, SKILLS_ROOT, stamp)
+                backup(dest, home, stamp)
                 if dest.is_dir() and not dest.is_symlink():
                     shutil.rmtree(dest)
                 else:
@@ -1206,7 +1209,7 @@ def apply_skill_ops(ops, stamp):
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.symlink_to(src)
         elif action == "remove":
-            backup(dest, SKILLS_ROOT, stamp)
+            backup(dest, home, stamp)
             if dest.is_dir() and not dest.is_symlink():
                 shutil.rmtree(dest)
             else:
@@ -1408,27 +1411,27 @@ def main():
         assert not source_updates and new_skill_targets == skill_targets
         assert new_instr_targets == instr_targets
     if norm(new_servers) != norm(servers):
-        backup(SERVERS_PATH, MCPS_ROOT, stamp)
+        backup(SERVERS_PATH, home, stamp)
         SERVERS_PATH.write_text(
             json.dumps({"version": 1, "servers": new_servers}, indent=2) + "\n")
     changed_clients = write_mcp_configs(final, live_all, home, genmod, stamp)
-    applied_skills = apply_skill_ops(skill_ops, stamp)
+    applied_skills = apply_skill_ops(skill_ops, home, stamp)
     if new_skill_targets != skill_targets:
-        backup(SKILLS_MANIFEST, SKILLS_ROOT, stamp)
+        backup(SKILLS_MANIFEST, home, stamp)
         write_skill_targets(new_skill_targets)
     for relpath, content in source_updates.items():
         path = INSTRUCTIONS_ROOT / relpath
-        backup(path, INSTRUCTIONS_ROOT, stamp)
+        backup(path, home, stamp)
         path.write_text(content)
     for provider, path, content in instr_ops:
-        backup(path, INSTRUCTIONS_ROOT, stamp)
+        backup(path, home, stamp)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
     for provider, legacy in instr_removals:
-        backup(legacy, INSTRUCTIONS_ROOT, stamp)
+        backup(legacy, home, stamp)
         legacy.unlink()
     if new_instr_targets != instr_targets:
-        backup(INSTRUCTIONS_MANIFEST, INSTRUCTIONS_ROOT, stamp)
+        backup(INSTRUCTIONS_MANIFEST, home, stamp)
         write_instruction_targets(new_instr_targets)
 
     print("\nSUMMARY")
@@ -1449,7 +1452,7 @@ def main():
         print(f"  providers rewritten: {', '.join(changed_clients)}")
     for action, name, agent in applied_skills:
         print(f"  skill {action}: {name}" + (f" @ {agent}" if agent else ""))
-    print(f"  backups: {{MCPs,Skills,Instructions}}/backups/{stamp} (as needed)")
+    print(f"  backups: {state_dir(home) / 'backups' / stamp} (as needed)")
 
 
 if __name__ == "__main__":

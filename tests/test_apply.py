@@ -356,6 +356,17 @@ class ProfileTest(ApplyTestCase):
         self.assertEqual(self.apply.effective_mode({"mode": "read-only"}), "read-only")
 
 
+class StateDirTest(ApplyTestCase):
+    def test_backup_lands_in_home_state_dir(self):
+        target = self.write(".claude/CLAUDE.md", "live\n")
+        self.apply.backup(target, self.home, "20260718-000000")
+        dest = (self.home / ".local/state/agents-config/backups/20260718-000000"
+                / str(target).lstrip("/"))
+        self.assertEqual(dest.read_text(), "live\n")
+        backups = self.home / ".local/state/agents-config/backups"
+        self.assertEqual(backups.stat().st_mode & 0o777, 0o700)
+
+
 class CliTest(ApplyTestCase):
     def test_plan_subcommand_and_flag(self):
         self.assertTrue(self.apply.parse_args(["plan"]).plan)

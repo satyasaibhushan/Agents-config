@@ -9,7 +9,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SERVERS_PATH = ROOT / "servers.json"
 GENERATED_DIR = ROOT / "generated"
-ENV_PATH = ROOT / ".env.local"
+ENV_PATH = Path.home() / ".config" / "agents-config" / "mcp.env"
+LEGACY_ENV_PATH = ROOT / ".env.local"
 
 PLACEHOLDER_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
@@ -23,23 +24,41 @@ def load_servers():
         return json.load(f)["servers"]
 
 
+def env_path():
+    """Secrets live in ~/.config/agents-config/mcp.env — outside the checkout,
+    so the repo can be shared read-only and can never leak a key. The old
+    MCPs/.env.local is honored with a nag until it is moved."""
+    if ENV_PATH.exists():
+        return ENV_PATH
+    if LEGACY_ENV_PATH.exists():
+        print(f"warning: using legacy {LEGACY_ENV_PATH}; move it to {ENV_PATH}",
+              file=sys.stderr)
+        return LEGACY_ENV_PATH
+    return None
+
+
 def load_env():
-    """Source secrets from .env.local, with the real shell environment as a
+    """Source secrets from mcp.env, with the real shell environment as a
     fallback. Values here are injected into the gitignored generated/ files so
     each agent gets a literal key instead of an unexpanded ${VAR}."""
     env = {}
-    if ENV_PATH.exists():
-        for raw in ENV_PATH.read_text().splitlines():
-            line = raw.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            env[key.strip()] = value.strip().strip('"').strip("'")
+    path = env_path()
+    if path is None:
+        return env
+    if path.stat().st_mode & 0o077:
+        os.chmod(path, 0o600)
+        print(f"note: tightened {path} to 0600", file=sys.stderr)
+    for raw in path.read_text().splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        env[key.strip()] = value.strip().strip('"').strip("'")
     return env
 
 
 def substitute(value, env):
-    """Recursively replace ${VAR} placeholders using .env.local then os.environ.
+    """Recursively replace ${VAR} placeholders using mcp.env then os.environ.
     Unresolved placeholders are left intact and recorded in MISSING_PLACEHOLDERS."""
     if isinstance(value, str):
         def repl(match):
@@ -137,6 +156,7 @@ def codex_config(servers, env):
 
 def write_json(path, data):
     path.write_text(json.dumps(data, indent=2) + "\n")
+    os.chmod(path, 0o600)  # generated files carry resolved secrets
 
 
 def main():
@@ -144,18 +164,20 @@ def main():
     servers = load_servers()
     env = load_env()
 
-    if not ENV_PATH.exists():
+    if env_path() is None:
         print(f"warning: {ENV_PATH} not found; placeholders will rely on the shell environment", file=sys.stderr)
 
     write_json(GENERATED_DIR / "cursor.mcp.json", json_config_for_client(servers, "cursor", env))
     write_json(GENERATED_DIR / "claude-code.json", json_config_for_client(servers, "claude-code", env))
     write_json(GENERATED_DIR / "claude-desktop.json", json_config_for_client(servers, "claude-desktop", env))
-    (GENERATED_DIR / "codex-mcp.toml").write_text(codex_config(servers, env))
+    toml_path = GENERATED_DIR / "codex-mcp.toml"
+    toml_path.write_text(codex_config(servers, env))
+    os.chmod(toml_path, 0o600)
 
     if MISSING_PLACEHOLDERS:
         names = ", ".join(sorted(MISSING_PLACEHOLDERS))
         print(
-            f"warning: unresolved placeholder(s) left as-is (not in .env.local or shell env): {names}",
+            f"warning: unresolved placeholder(s) left as-is (not in mcp.env or shell env): {names}",
             file=sys.stderr,
         )
 
