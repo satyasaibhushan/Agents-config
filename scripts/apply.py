@@ -34,11 +34,15 @@ instructions (AC-3)
            per-provider file. Same verbs as MCPs: promote / keep / overwrite /
            skip, with promote rippling to every provider on the same source.
 
-Usage:
-  apply.py                interactive reconcile + apply
-  apply.py --plan         print the drift matrix and exit (read-only)
-  apply.py --plan --json  machine-readable plan (for the control plane later)
-  apply.py --only mcps    limit scope (or: --only skills / --only instructions)
+Usage (via scripts/agents-config, which picks a Python >= 3.11):
+  agents-config apply              interactive reconcile + apply
+  agents-config plan               print the drift matrix and exit (read-only)
+  agents-config plan --json        machine-readable plan
+  agents-config apply --only mcps  limit scope (or: skills / instructions)
+
+--home and --platform are test seams: they retarget every home-relative path
+and the platform check without touching the real home. The bare --plan flag is
+kept for back-compat with `apply.py --plan`.
 """
 
 import argparse
@@ -950,14 +954,35 @@ def emit_json_plan(mcp_items, skill_items, instr_items, secret_map):
     }, indent=2))
 
 
-def main():
+def detect_platform():
+    if sys.platform == "darwin":
+        return "darwin"
+    if sys.platform.startswith("linux"):
+        return "linux"
+    return sys.platform
+
+
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="Reconciling apply for Agent-config")
-    parser.add_argument("--plan", action="store_true", help="show drift and exit")
-    parser.add_argument("--json", action="store_true", help="with --plan: JSON output")
+    parser.add_argument("command", nargs="?", choices=["plan", "apply"],
+                        help="plan: show drift and exit (read-only); apply: reconcile")
+    parser.add_argument("--plan", action="store_true", help="alias for the plan command")
+    parser.add_argument("--json", action="store_true", help="with plan: JSON output")
     parser.add_argument("--only", choices=["mcps", "skills", "instructions"],
                         help="limit scope")
+    parser.add_argument("--profile", help="profile from profiles.yaml "
+                        "(saved on apply; required on first run)")
+    # test seams: retarget the home directory and platform without a real home
     parser.add_argument("--home", type=Path, default=Path.home(), help=argparse.SUPPRESS)
-    args = parser.parse_args()
+    parser.add_argument("--platform", choices=["darwin", "linux"],
+                        default=detect_platform(), help=argparse.SUPPRESS)
+    args = parser.parse_args(argv)
+    args.plan = args.plan or args.command == "plan"
+    return args
+
+
+def main():
+    args = parse_args()
     in_scope = lambda section: args.only in (None, section)
 
     genmod = load_genmod()
