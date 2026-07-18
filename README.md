@@ -66,8 +66,9 @@ agents-config apply --only mcps        # or skills / instructions
   ripple where a promote rewrites providers that were in sync with the old
   base. Zero writes happen before you confirm; every touched file is backed up
   under `~/.local/state/agents-config/backups/<timestamp>/`.
-- **Secrets** never enter the repo: literal values from
-  `~/.config/agents-config/mcp.env` are reverse-substituted back into `${VAR}`
+- **Secrets** never enter the repo: literal values from the selected MCP env
+  file (normally `~/.config/agents-config/mcp.env`, or a group-read-only shared
+  file reached through that path) are reverse-substituted back into `${VAR}`
   placeholders on import/promote, and all previews are masked. The same
   applies to `${HOME}` and `${CODE_ROOT}`, so canonical definitions stay
   portable across machines.

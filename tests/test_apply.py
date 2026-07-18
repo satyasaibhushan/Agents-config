@@ -541,6 +541,16 @@ class GeneratorSecurityTest(ApplyTestCase):
             self.genmod.load_env(strict_permissions=True)
         self.assertEqual(env_path.stat().st_mode & 0o777, 0o644)
 
+    def test_group_read_only_env_is_allowed_for_shared_devbox_secrets(self):
+        env_path = self.write("shared/mcp.env", "TOKEN=value\n")
+        env_path.chmod(0o640)
+        self.genmod.ENV_PATH = env_path
+        self.genmod.LEGACY_ENV_PATH = self.tmp / "missing"
+        env = self.genmod.load_env(strict_permissions=True)
+        self.assertEqual(env["TOKEN"], "value")
+        self.assertEqual(env["MCP_ENV_PATH"], str(env_path))
+        self.assertEqual(env_path.stat().st_mode & 0o777, 0o640)
+
     def test_generated_output_defaults_to_user_state(self):
         output = self.genmod.generated_dir(self.home)
         self.assertEqual(

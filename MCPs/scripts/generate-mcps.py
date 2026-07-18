@@ -51,8 +51,15 @@ def load_env(strict_permissions=False):
     env = {}
     path = env_path()
     if path is not None:
-        if path.stat().st_mode & 0o077:
-            message = f"{path} must be private (run: chmod 600 {path})"
+        mode = path.stat().st_mode & 0o777
+        # A per-user file is normally 0600.  Devboxes may instead point each
+        # account at one group-owned 0640 file; group write/execute and every
+        # permission for other users remain forbidden.
+        if mode & 0o037:
+            message = (
+                f"{path} must be private or group-read-only "
+                f"(run: chmod 600 {path}, or chmod 640 for a shared group file)"
+            )
             if strict_permissions:
                 sys.exit("error: " + message)
             print("warning: " + message, file=sys.stderr)
@@ -62,6 +69,7 @@ def load_env(strict_permissions=False):
                 continue
             key, _, value = line.partition("=")
             env[key.strip()] = value.strip().strip('"').strip("'")
+    env["MCP_ENV_PATH"] = str(path or ENV_PATH)
     # Path variables for portable server definitions. Standalone generation
     # assumes the default layout; apply.py overrides both from the profile.
     env.setdefault("HOME", str(Path.home()))

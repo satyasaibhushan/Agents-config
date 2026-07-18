@@ -81,7 +81,7 @@
           "${CODE_ROOT}/Personal/jira-attachment-downloader/mcp_server.py"
         ],
         "env": {
-          "JIRA_AGENT_MCP_ENV": "${HOME}/.config/agents-config/mcp.env"
+          "JIRA_AGENT_MCP_ENV": "${MCP_ENV_PATH}"
         }
       },
       "codex": {

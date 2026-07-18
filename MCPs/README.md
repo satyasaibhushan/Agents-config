@@ -45,10 +45,14 @@ untouched.
 
 ## Secret handling
 
-Real values live in `~/.config/agents-config/mcp.env` (must be mode 0600) —
-never in this repo, and outside the checkout so the repo can be shared
-read-only. `plan` never changes its permissions; it warns, while `apply` and
-standalone generation stop with the exact `chmod` command when it is unsafe.
+Real values live outside this repo. A personal machine normally uses
+`~/.config/agents-config/mcp.env` with mode `0600`. Accounts that deliberately
+share MCP credentials may point that path at one group-owned file (for example
+`/srv/credentials/agents-config/mcp.env`) with mode `0640`; each home contains
+only a symlink, not another secret copy. Group write/execute and all access for
+other users are rejected. `plan` never changes permissions; it warns, while
+`apply` and standalone generation stop with the exact `chmod` command when the
+file is unsafe.
 Canonical config uses `${VAR}` placeholders; generation injects the
 literal values into private user-state previews (0600) and into live
 configs on apply. Apply refuses to write configs with unresolved placeholders.
@@ -86,5 +90,7 @@ on write.
 
 The restricted `devbox-agent` profile explicitly allows only the read-oriented
 DB, New Relic, and Jira MCP definitions. They remain out of scope until their
-commands, paths, and environment variables exist. Give that account separate,
-least-privilege service credentials rather than reusing an admin token.
+commands, paths, and environment variables exist. On a trusted single-user
+Devbox, both Unix accounts may read one group-owned credential file; use
+least-privilege, preferably read-only service credentials because either
+account can exercise their granted scope.
