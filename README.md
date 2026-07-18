@@ -29,6 +29,15 @@ mode:
 The first run needs an explicit `--profile <name>`; `apply` saves the choice in
 `~/.config/agents-config/config.json`.
 
+Install the launcher once for each account after cloning:
+
+```bash
+~/Agents/Config/scripts/install
+```
+
+This creates only a `~/.local/bin/agents-config` symlink back to the checkout.
+It does not copy configuration, so a pull updates every linked account.
+
 ## Apply (reconciling)
 
 `scripts/agents-config` (a launcher that finds Python ≥ 3.11 for
@@ -63,8 +72,9 @@ agents-config apply --only mcps        # or skills / instructions
   applies to `${HOME}` and `${CODE_ROOT}`, so canonical definitions stay
   portable across machines.
 
-App-managed items (e.g. Codex's own `node_repl` MCP) are on an ignore list —
-planning skips them and writes round-trip them untouched. MCP servers that are
+App-managed items (Codex's `node_repl`, `computer-use`, and
+`openaiDeveloperDocs` MCPs) are on an ignore list — planning skips them and
+writes round-trip them untouched. MCP servers that are
 out of scope for the current platform, profile, or machine (missing
 executable/path/secret) are reported with the reason and left exactly as found.
 

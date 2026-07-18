@@ -29,18 +29,25 @@ Both intentionally create symlinks for individual skills only. Do not replace an
 
 ## Per-Skill Client Targeting
 
-`Skills/skills.json` mirrors the MCP `clients` key:
+`Skills/skills.json` mirrors the MCP `clients` and `profiles` keys:
 
 ```json
 {
   "version": 1,
   "skills": {
-    "laravel-specialist": { "clients": ["claude-code", "cursor"] }
+    "laravel-specialist": {
+      "clients": ["claude-code", "cursor"],
+      "profiles": ["mac-admin", "devbox-admin", "devbox-agent"]
+    }
   }
 }
 ```
 
-The manifest is **sparse**: a skill absent from it targets every agent (`agents`, `claude-code`, `codex`, `cursor`), so with no manifest everything links everywhere. During apply:
+Both fields are **sparse**. An absent `clients` field targets every agent
+(`agents`, `claude-code`, `codex`, `cursor`). An absent `profiles` field follows
+the active profile's `skills` default policy. Consequently, a `default-deny`
+profile installs only skills that explicitly name it. Out-of-scope skills are
+left untouched. During apply:
 
 - a skill present in an agent it does not target shows as `untargeted` — keep (target the agent) or overwrite (remove the link, backed up)
 - a targeted skill missing from an agent — overwrite (link it) or keep (stop targeting that agent)

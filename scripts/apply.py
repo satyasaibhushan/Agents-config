@@ -20,8 +20,10 @@ preview    recomputes every affected item row (including promote ripple onto
            providers that were in sync with the old base) before anything is
            written. Zero writes before confirm; backups always.
 targeting  skills mirror the MCP `clients` key via Skills/skills.json:
-             {"version": 1, "skills": {"<name>": {"clients": ["claude-code"]}}}
-           The manifest is sparse -- a skill absent from it targets every agent.
+             {"version": 1, "skills": {"<name>": {
+               "clients": ["claude-code"], "profiles": ["mac-admin"]}}}
+           Both fields are sparse: absent clients targets every agent; absent
+           profiles follows the active profile's skills default policy.
            Reconcile decisions (keep here / stop targeting / target this agent)
            rewrite the manifest on confirm.
 instructions (AC-3)
@@ -88,7 +90,7 @@ SKILL_IGNORE = {
 }
 # Agent-managed MCP servers (installed by the app itself, not by us).
 MCP_IGNORE = {
-    "codex": {"node_repl"},
+    "codex": {"node_repl", "computer-use", "openaiDeveloperDocs"},
 }
 
 CODEX_KEYS = {"args", "command", "enabled", "env", "startup_timeout_sec"}
@@ -302,9 +304,12 @@ def plan_mcps(genmod, servers, env, home, ignore=frozenset()):
 
 # ---------------------------------------------------------------- fetch: skills
 
-def load_skill_targets():
-    """Skills/skills.json -> {name: [agents]}. Sparse: a skill absent from the
-    manifest targets every agent (so no manifest means AC-1 behavior)."""
+def load_skill_targets(profiles):
+    """Skills/skills.json -> {name: {clients?, profiles?}}.
+
+    Both keys are sparse. An absent clients key targets every agent; an absent
+    profiles key follows the active profile's skills default policy.
+    """
     if not SKILLS_MANIFEST.exists():
         return {}
     try:
@@ -313,24 +318,47 @@ def load_skill_targets():
         sys.exit(f"error: cannot parse {SKILLS_MANIFEST}: {exc}")
     targets = {}
     for name, entry in (data.get("skills") or {}).items():
-        clients = entry.get("clients", [])
+        if not isinstance(entry, dict):
+            sys.exit(f"error: skills.json: {name}: entry must be an object")
+        unknown_keys = set(entry) - {"clients", "profiles"}
+        if unknown_keys:
+            sys.exit(f"error: skills.json: {name}: unknown key(s): "
+                     + ", ".join(sorted(unknown_keys)))
+        clients = entry.get("clients", list(SKILL_AGENTS))
+        allowed_profiles = entry.get("profiles")
+        if not isinstance(clients, list):
+            sys.exit(f"error: skills.json: {name}: clients must be a list")
+        if allowed_profiles is not None and not isinstance(allowed_profiles, list):
+            sys.exit(f"error: skills.json: {name}: profiles must be a list")
         unknown = [c for c in clients if c not in SKILL_AGENTS]
         if unknown:
             sys.exit(f"error: skills.json: {name}: unknown client(s): {', '.join(unknown)}")
-        targets[name] = clients
+        unknown_profiles = [p for p in (allowed_profiles or []) if p not in profiles]
+        if unknown_profiles:
+            sys.exit(f"error: skills.json: {name}: unknown profile(s): "
+                     + ", ".join(unknown_profiles))
+        targets[name] = dict(entry)
     return targets
 
 
-def skill_clients(name, targets):
-    return targets.get(name, list(SKILL_AGENTS))
+def skill_clients(name, targets, profile):
+    entry = targets.get(name, {})
+    allowed_profiles = entry.get("profiles")
+    if allowed_profiles is not None:
+        enabled = profile["name"] in allowed_profiles
+    else:
+        enabled = profile.get("skills", "default-allow") == "default-allow"
+    if not enabled:
+        return []
+    return entry.get("clients", list(SKILL_AGENTS))
 
 
 def write_skill_targets(targets):
     manifest = {
         "version": 1,
         "skills": {
-            name: {"clients": clients}
-            for name, clients in sorted(targets.items(), key=lambda kv: kv[0].lower())
+            name: entry
+            for name, entry in sorted(targets.items(), key=lambda kv: kv[0].lower())
         },
     }
     SKILLS_MANIFEST.write_text(json.dumps(manifest, indent=2) + "\n")
@@ -346,9 +374,10 @@ def dir_digest(path):
     return digest.hexdigest()
 
 
-def plan_skills(home, targets):
+def plan_skills(home, targets, profile):
     """-> {name: {agent: cell}} with skill states per agent directory.
-    targets: Skills/skills.json content — absent skill = targets every agent."""
+    Profile and client scope mirror MCP policy; out-of-scope skills are left
+    exactly as found and omitted from the plan."""
     canonical = {
         p.name: p for p in sorted(CANONICAL_SKILLS.iterdir())
         if p.is_dir() and not p.name.startswith(".")
@@ -365,11 +394,13 @@ def plan_skills(home, targets):
                 if name.startswith(".") or name in ignore:
                     continue
                 seen.add(name)
+                if name in canonical and not skill_clients(name, targets, profile):
+                    continue  # out of scope: leave the live entry untouched
                 cell = classify_skill(target, canonical.get(name))
                 if cell is None:
                     continue
                 if (name in canonical and cell["state"] != FOREIGN
-                        and agent not in skill_clients(name, targets)):
+                        and agent not in skill_clients(name, targets, profile)):
                     # in canonical, present live, but this agent isn't targeted
                     cell = {
                         "state": UNTARGETED,
@@ -379,7 +410,7 @@ def plan_skills(home, targets):
                     }
                 items.setdefault(name, {})[agent] = cell
         for name in canonical:
-            if name not in seen and agent in skill_clients(name, targets):
+            if name not in seen and agent in skill_clients(name, targets, profile):
                 items.setdefault(name, {})[agent] = {"state": MISSING}
 
     # drop rows where every agent is in sync
@@ -1033,22 +1064,27 @@ def reconcile_mcps(items, servers, secret_map, read_only=False):
     return new_servers, resolutions, skipped
 
 
-def reconcile_skills(items, canonical, targets, home, read_only=False):
+def reconcile_skills(items, canonical, targets, home, profile, read_only=False):
     """-> (ops, new_targets, skipped). ops: (action, name, agent_or_None, src, dest).
     new_targets is the (possibly rewritten) Skills/skills.json content."""
     ops = []
     skipped = []
-    new_targets = {name: list(clients) for name, clients in targets.items()}
+    new_targets = {name: dict(entry) for name, entry in targets.items()}
 
     def clients_of(name):
-        return new_targets.get(name, list(SKILL_AGENTS))
+        return skill_clients(name, new_targets, profile)
 
     def set_clients(name, clients):
         ordered = [a for a in SKILL_AGENTS if a in clients]
+        entry = dict(new_targets.get(name, {}))
         if ordered == list(SKILL_AGENTS):
-            new_targets.pop(name, None)  # all agents = the sparse default
+            entry.pop("clients", None)  # all agents = the sparse client default
         else:
-            new_targets[name] = ordered
+            entry["clients"] = ordered
+        if entry:
+            new_targets[name] = entry
+        else:
+            new_targets.pop(name, None)
 
     drifted = [
         (name, cells) for name, cells in items.items()
@@ -1238,6 +1274,8 @@ def backup(path, home, stamp):
             shutil.copytree(path, dest, symlinks=True)
         else:
             shutil.copy2(path, dest, follow_symlinks=False)
+            if dest.is_file() and not dest.is_symlink():
+                os.chmod(dest, 0o600)
 
 
 def write_mcp_configs(final, live_all, home, genmod, stamp):
@@ -1248,7 +1286,7 @@ def write_mcp_configs(final, live_all, home, genmod, stamp):
             continue
         path = paths[client]
         backup(path, home, stamp)
-        path.parent.mkdir(parents=True, exist_ok=True)
+        private_mkdir(path.parent)
         if client == "cursor":
             path.write_text(json.dumps({"mcpServers": final[client]}, indent=2) + "\n")
         elif client in ("claude-code", "claude-desktop"):
@@ -1264,6 +1302,7 @@ def write_mcp_configs(final, live_all, home, genmod, stamp):
             )
             content = content.rstrip() + "\n\n" + codex_toml_section(final[client], genmod).rstrip() + "\n"
             path.write_text(content)
+        os.chmod(path, 0o600)
         changed.append(client)
     return changed
 
@@ -1363,16 +1402,22 @@ def main():
     if not args.plan:
         save_local_config(args.home, {"profile": profile["name"]})
 
-    genmod = load_genmod()
-    servers = genmod.load_servers()
     home = args.home
-    env = path_vars(genmod.load_env(), home, profile)
+    genmod = load_genmod()
+    servers = {}
+    env = path_vars({}, home, profile)
     secret_map = build_secret_map(env)
-    validate_servers(servers, profiles)
-    servers_in_scope, out_of_scope = partition_servers(
-        genmod, servers, profile, args.platform, env)
+    servers_in_scope, out_of_scope = {}, {}
+    if in_scope("mcps"):
+        servers = genmod.load_servers()
+        env = path_vars(
+            genmod.load_env(strict_permissions=not args.plan), home, profile)
+        secret_map = build_secret_map(env)
+        validate_servers(servers, profiles)
+        servers_in_scope, out_of_scope = partition_servers(
+            genmod, servers, profile, args.platform, env)
 
-    skill_targets = load_skill_targets()
+    skill_targets = load_skill_targets(profiles)
     instr_targets, default_source = load_instruction_targets()
 
     mcp_items, live_all = ({}, {c: {} for c in MCP_CLIENTS})
@@ -1390,7 +1435,7 @@ def main():
             else:
                 sys.exit("error: " + message)
     if in_scope("skills"):
-        skill_items, canonical_skills = plan_skills(home, skill_targets)
+        skill_items, canonical_skills = plan_skills(home, skill_targets, profile)
     if in_scope("instructions"):
         instr_items = plan_instructions(instr_targets, home, profile, default_source)
 
@@ -1430,7 +1475,7 @@ def main():
     skill_ops, new_skill_targets, skill_skipped = ([], skill_targets, [])
     if skill_drift:
         skill_ops, new_skill_targets, skill_skipped = reconcile_skills(
-            skill_drift, canonical_skills, skill_targets, home, read_only)
+            skill_drift, canonical_skills, skill_targets, home, profile, read_only)
     new_instr_targets, source_updates, instr_resolutions, instr_skipped = \
         (instr_targets, {}, {}, [])
     if instr_drift:
@@ -1472,8 +1517,8 @@ def main():
         any_change = True
         print("  Skills/skills.json: targeting updated")
         for name in sorted(set(skill_targets) | set(new_skill_targets), key=str.lower):
-            old = skill_targets.get(name, list(SKILL_AGENTS))
-            new = new_skill_targets.get(name, list(SKILL_AGENTS))
+            old = skill_clients(name, skill_targets, profile)
+            new = skill_clients(name, new_skill_targets, profile)
             if old != new:
                 print(f"    {name}: {', '.join(old)} -> {', '.join(new) or '(no agents)'}")
     for relpath in sorted(source_updates):

@@ -7,6 +7,8 @@ Run:  python3 -m unittest discover -s tests
 
 import json
 import importlib.util
+import os
+import subprocess
 import tempfile
 import tomllib
 import unittest
@@ -86,10 +88,17 @@ class McpPlanTest(ApplyTestCase):
         self.assertEqual(items["alpha"]["cursor"]["state"], A.UNTARGETED)
 
     def test_app_managed_servers_are_ignored(self):
-        self.write(".codex/config.toml",
-                   '[mcp_servers.node_repl]\ncommand = "node"\n')
+        self.write(".codex/config.toml", "\n".join([
+            '[mcp_servers.node_repl]',
+            'command = "node"',
+            '[mcp_servers.computer-use]',
+            'command = "computer-use"',
+            '[mcp_servers.openaiDeveloperDocs]',
+            'url = "https://developers.openai.com/mcp"',
+        ]))
         items, _ = self.plan(servers={})
-        self.assertNotIn("node_repl", items)
+        for name in ("node_repl", "computer-use", "openaiDeveloperDocs"):
+            self.assertNotIn(name, items)
 
     def test_secret_substitution_and_masking(self):
         desired = self.desired("beta", "claude-code")
@@ -132,7 +141,8 @@ class SkillPlanTest(ApplyTestCase):
         extra.mkdir()
         (extra / "SKILL.md").write_text("extra\n")
 
-        items, canonical = self.apply.plan_skills(self.home, {})
+        profile = {"name": "test", "skills": "default-allow"}
+        items, canonical = self.apply.plan_skills(self.home, {}, profile)
         self.assertIn("demo", canonical)
         demo = items["demo"]
         self.assertEqual(demo["claude-code"]["state"], A.IN_SYNC)
@@ -147,9 +157,41 @@ class SkillPlanTest(ApplyTestCase):
         link = self.home / ".codex/skills/demo"
         link.parent.mkdir(parents=True)
         link.symlink_to(self.canonical / "demo")
-        items, _ = self.apply.plan_skills(self.home, {"demo": ["claude-code"]})
+        profile = {"name": "test", "skills": "default-allow"}
+        targets = {"demo": {"clients": ["claude-code"]}}
+        items, _ = self.apply.plan_skills(self.home, targets, profile)
         self.assertEqual(items["demo"]["codex"]["state"], A.UNTARGETED)
         self.assertEqual(items["demo"]["claude-code"]["state"], A.MISSING)
+
+    def test_default_deny_only_installs_explicitly_allowed_skills(self):
+        (self.canonical / "blocked").mkdir()
+        (self.canonical / "blocked" / "SKILL.md").write_text("blocked\n")
+        profile = {"name": "devbox-agent", "skills": "default-deny"}
+        targets = {
+            "demo": {"profiles": ["devbox-agent"]},
+            "blocked": {},
+        }
+        items, _ = self.apply.plan_skills(self.home, targets, profile)
+        self.assertIn("demo", items)
+        self.assertNotIn("blocked", items)
+
+    def test_skill_manifest_profiles_are_validated_and_preserved(self):
+        manifest = self.tmp / "skills.json"
+        manifest.write_text(json.dumps({"version": 1, "skills": {
+            "demo": {"clients": ["codex"], "profiles": ["devbox-agent"]}
+        }}))
+        self.apply.SKILLS_MANIFEST = manifest
+        targets = self.apply.load_skill_targets({"devbox-agent": {}})
+        self.assertEqual(targets["demo"]["profiles"], ["devbox-agent"])
+        self.apply.write_skill_targets(targets)
+        saved = json.loads(manifest.read_text())["skills"]["demo"]
+        self.assertEqual(saved["profiles"], ["devbox-agent"])
+
+        manifest.write_text(json.dumps({"version": 1, "skills": {
+            "demo": {"profiles": ["unknown"]}
+        }}))
+        with self.assertRaises(SystemExit):
+            self.apply.load_skill_targets({"devbox-agent": {}})
 
 
 BASE = "# Base\n\nShared rules.\n"
@@ -445,8 +487,51 @@ class StateDirTest(ApplyTestCase):
         dest = (self.home / ".local/state/agents-config/backups/20260718-000000"
                 / str(target).lstrip("/"))
         self.assertEqual(dest.read_text(), "live\n")
+        self.assertEqual(dest.stat().st_mode & 0o777, 0o600)
         backups = self.home / ".local/state/agents-config/backups"
         self.assertEqual(backups.stat().st_mode & 0o777, 0o700)
+
+    def test_backing_up_a_symlink_does_not_chmod_its_target(self):
+        canonical = self.tmp / "canonical"
+        canonical.write_text("skill\n")
+        canonical.chmod(0o644)
+        link = self.home / ".codex/skills/demo"
+        link.parent.mkdir(parents=True)
+        link.symlink_to(canonical)
+        self.apply.backup(link, self.home, "20260718-000002")
+        self.assertEqual(canonical.stat().st_mode & 0o777, 0o644)
+
+    def test_new_mcp_configs_are_private(self):
+        final = {client: {} for client in self.apply.MCP_CLIENTS}
+        live = {client: {} for client in self.apply.MCP_CLIENTS}
+        final["codex"] = {"demo": {"command": "demo"}}
+        changed = self.apply.write_mcp_configs(
+            final, live, self.home, self.genmod, "20260718-000001")
+        path = self.home / ".codex/config.toml"
+        self.assertEqual(changed, ["codex"])
+        self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(path.parent.stat().st_mode & 0o777, 0o700)
+
+
+class GeneratorSecurityTest(ApplyTestCase):
+    def test_load_env_never_changes_permissions(self):
+        env_path = self.write(".config/agents-config/mcp.env", "TOKEN=value\n")
+        env_path.chmod(0o644)
+        self.genmod.ENV_PATH = env_path
+        self.genmod.LEGACY_ENV_PATH = self.tmp / "missing"
+        self.genmod.load_env()
+        self.assertEqual(env_path.stat().st_mode & 0o777, 0o644)
+        with self.assertRaises(SystemExit):
+            self.genmod.load_env(strict_permissions=True)
+        self.assertEqual(env_path.stat().st_mode & 0o777, 0o644)
+
+    def test_generated_output_defaults_to_user_state(self):
+        output = self.genmod.generated_dir(self.home)
+        self.assertEqual(
+            output,
+            self.home / ".local/state/agents-config/generated",
+        )
+        self.assertFalse(str(output).startswith(str(self.genmod.ROOT)))
 
 
 class CliTest(ApplyTestCase):
@@ -455,6 +540,18 @@ class CliTest(ApplyTestCase):
         self.assertTrue(self.apply.parse_args(["--plan"]).plan)
         self.assertFalse(self.apply.parse_args([]).plan)
         self.assertFalse(self.apply.parse_args(["apply"]).plan)
+
+    def test_instruction_only_plan_does_not_touch_mcp_env(self):
+        env_path = self.write(".config/agents-config/mcp.env", "TOKEN=value\n")
+        env_path.chmod(0o644)
+        before = env_path.stat().st_mode & 0o777
+        env = dict(os.environ, HOME=str(self.home))
+        subprocess.run([
+            str(REPO / "scripts" / "agents-config"),
+            "plan", "--only", "instructions", "--profile", "mac-admin",
+            "--home", str(self.home), "--platform", "darwin",
+        ], cwd=REPO, env=env, check=True, capture_output=True, text=True)
+        self.assertEqual(env_path.stat().st_mode & 0o777, before)
 
 
 if __name__ == "__main__":

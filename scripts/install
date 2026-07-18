@@ -1,0 +1,19 @@
+#!/bin/sh
+# Install the launcher for the current account without copying repo files.
+set -eu
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+BIN_DIR="${HOME}/.local/bin"
+TARGET="$BIN_DIR/agents-config"
+
+mkdir -p "$BIN_DIR"
+ln -sfn "$SCRIPT_DIR/agents-config" "$TARGET"
+
+echo "installed: $TARGET -> $SCRIPT_DIR/agents-config"
+case ":${PATH}:" in
+  *":${BIN_DIR}:"*) ;;
+  *)
+    echo "note: add $BIN_DIR to PATH, then open a new shell:" >&2
+    echo '  export PATH="$HOME/.local/bin:$PATH"' >&2
+    ;;
+esac

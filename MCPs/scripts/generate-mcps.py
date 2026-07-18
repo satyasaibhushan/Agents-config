@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
+import argparse
+import importlib.util
 import json
 import os
 import re
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SERVERS_PATH = ROOT / "servers.json"
-GENERATED_DIR = ROOT / "generated"
 ENV_PATH = Path.home() / ".config" / "agents-config" / "mcp.env"
 LEGACY_ENV_PATH = ROOT / ".env.local"
 
@@ -37,16 +39,23 @@ def env_path():
     return None
 
 
-def load_env():
+def generated_dir(home=Path.home()):
+    """Resolved previews are mutable, secret-bearing user state, never repo data."""
+    return home / ".local" / "state" / "agents-config" / "generated"
+
+
+def load_env(strict_permissions=False):
     """Source secrets from mcp.env, with the real shell environment as a
-    fallback. Values here are injected into the gitignored generated/ files so
-    each agent gets a literal key instead of an unexpanded ${VAR}."""
+    fallback. Values are injected into private user-state previews and live
+    provider configs so each agent gets a literal key instead of ${VAR}."""
     env = {}
     path = env_path()
     if path is not None:
         if path.stat().st_mode & 0o077:
-            os.chmod(path, 0o600)
-            print(f"note: tightened {path} to 0600", file=sys.stderr)
+            message = f"{path} must be private (run: chmod 600 {path})"
+            if strict_permissions:
+                sys.exit("error: " + message)
+            print("warning: " + message, file=sys.stderr)
         for raw in path.read_text().splitlines():
             line = raw.strip()
             if not line or line.startswith("#") or "=" not in line:
@@ -163,18 +172,56 @@ def write_json(path, data):
     os.chmod(path, 0o600)  # generated files carry resolved secrets
 
 
-def main():
-    GENERATED_DIR.mkdir(parents=True, exist_ok=True)
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        description="Generate secret-bearing MCP previews outside the checkout")
+    parser.add_argument("--profile", required=True,
+                        help="profile from the repository profiles.yaml")
+    parser.add_argument("--platform", choices=["darwin", "linux"],
+                        default="darwin" if sys.platform == "darwin" else "linux")
+    parser.add_argument("--output-dir", type=Path,
+                        help="override ~/.local/state/agents-config/generated")
+    return parser.parse_args(argv)
+
+
+def scoped_servers(servers, env, profile_name, platform, home):
+    """Use apply.py's one schema/scope implementation for standalone previews."""
+    apply_path = ROOT.parent / "scripts" / "apply.py"
+    spec = importlib.util.spec_from_file_location("agents_config_apply", apply_path)
+    applymod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(applymod)
+    profiles = applymod.load_profiles()
+    args = argparse.Namespace(
+        profile=profile_name, home=home, platform=platform)
+    profile = applymod.resolve_profile(args, profiles)
+    applymod.run_preflight(profile)
+    env.update(applymod.path_vars({}, home, profile))
+    applymod.validate_servers(servers, profiles)
+    selected, out = applymod.partition_servers(
+        SimpleNamespace(substitute=substitute),
+        servers, profile, platform, env)
+    for name, reason in sorted(out.items(), key=lambda item: item[0].lower()):
+        print(f"out of scope: {name} — {reason}", file=sys.stderr)
+    return selected
+
+
+def main(argv=None):
+    args = parse_args(argv)
+    output_dir = args.output_dir or generated_dir()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    os.chmod(output_dir, 0o700)
     servers = load_servers()
-    env = load_env()
+    env = load_env(strict_permissions=True)
+    servers = scoped_servers(
+        servers, env, args.profile, args.platform, Path.home())
 
     if env_path() is None:
         print(f"warning: {ENV_PATH} not found; placeholders will rely on the shell environment", file=sys.stderr)
 
-    write_json(GENERATED_DIR / "cursor.mcp.json", json_config_for_client(servers, "cursor", env))
-    write_json(GENERATED_DIR / "claude-code.json", json_config_for_client(servers, "claude-code", env))
-    write_json(GENERATED_DIR / "claude-desktop.json", json_config_for_client(servers, "claude-desktop", env))
-    toml_path = GENERATED_DIR / "codex-mcp.toml"
+    write_json(output_dir / "cursor.mcp.json", json_config_for_client(servers, "cursor", env))
+    write_json(output_dir / "claude-code.json", json_config_for_client(servers, "claude-code", env))
+    write_json(output_dir / "claude-desktop.json", json_config_for_client(servers, "claude-desktop", env))
+    toml_path = output_dir / "codex-mcp.toml"
     toml_path.write_text(codex_config(servers, env))
     os.chmod(toml_path, 0o600)
 
@@ -184,6 +231,7 @@ def main():
             f"warning: unresolved placeholder(s) left as-is (not in mcp.env or shell env): {names}",
             file=sys.stderr,
         )
+    print(output_dir)
 
 
 if __name__ == "__main__":

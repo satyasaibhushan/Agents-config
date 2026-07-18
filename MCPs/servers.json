@@ -19,6 +19,7 @@
     },
     "db-mcp": {
       "clients": ["cursor", "claude-code", "claude-desktop", "codex"],
+      "profiles": ["mac-admin", "devbox-admin", "devbox-agent"],
       "security": "reads shared databases via profiles",
       "requires": {"paths": ["${CODE_ROOT}/Personal/DB-MCP/.venv/bin/db-mcp"]},
       "setup": "clone DB-MCP under <code root>/Personal and create its .venv",
@@ -31,8 +32,12 @@
     },
     "new-relic": {
       "clients": ["cursor", "claude-code", "claude-desktop", "codex"],
+      "profiles": ["mac-admin", "devbox-admin", "devbox-agent"],
       "security": "external service, sends queries to New Relic",
-      "requires": {"env": ["NEW_RELIC_API_KEY"]},
+      "requires": {
+        "executables": ["npx"],
+        "env": ["NEW_RELIC_API_KEY"]
+      },
       "config": {
         "type": "http",
         "url": "https://mcp.newrelic.com/mcp/",
@@ -63,6 +68,7 @@
     },
     "jira-attachments": {
       "clients": ["cursor", "claude-code", "claude-desktop", "codex"],
+      "profiles": ["mac-admin", "devbox-admin", "devbox-agent"],
       "security": "reads Jira, downloads attachments locally",
       "requires": {
         "executables": ["python3"],

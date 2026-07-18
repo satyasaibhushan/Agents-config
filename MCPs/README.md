@@ -12,10 +12,7 @@
 ```text
 servers.json                 Canonical MCP server definitions
 .env.example                 Secret placeholders (real values: ~/.config/agents-config/mcp.env)
-generated/cursor.mcp.json     Ignored preview for ~/.cursor/mcp.json
-generated/claude-code.json    Ignored preview for top-level ~/.claude.json mcpServers
-generated/claude-desktop.json Ignored preview for Claude Desktop config
-generated/codex-mcp.toml      Ignored preview for Codex [mcp_servers.*] TOML
+~/.local/state/agents-config/generated/  Private resolved previews (0600)
 scripts/generate-mcps.py     Regenerate previews from servers.json (used by apply)
 ```
 
@@ -48,10 +45,12 @@ untouched.
 
 ## Secret handling
 
-Real values live in `~/.config/agents-config/mcp.env` (mode 0600, enforced) —
+Real values live in `~/.config/agents-config/mcp.env` (must be mode 0600) —
 never in this repo, and outside the checkout so the repo can be shared
-read-only. Canonical config uses `${VAR}` placeholders; generation injects the
-literal values into the gitignored `generated/` files (0600) and into live
+read-only. `plan` never changes its permissions; it warns, while `apply` and
+standalone generation stop with the exact `chmod` command when it is unsafe.
+Canonical config uses `${VAR}` placeholders; generation injects the
+literal values into private user-state previews (0600) and into live
 configs on apply. Apply refuses to write configs with unresolved placeholders.
 On import/promote, literal secrets are reverse-substituted back into
 placeholders, and all previews are masked.
@@ -63,11 +62,17 @@ agents-config apply --only mcps    # interactive reconcile
 agents-config plan --only mcps     # read-only drift report
 ```
 
-To regenerate the ignored preview files without applying:
+To regenerate private preview files without applying:
 
 ```bash
-python3 ~/Agents/Config/MCPs/scripts/generate-mcps.py
+python3 ~/Agents/Config/MCPs/scripts/generate-mcps.py --profile mac-admin
 ```
+
+The active profile filters the preview by platform, permissions, and available
+requirements exactly like `agents-config apply`. The command prints the output
+directory. Use `--output-dir` only when a
+different private location is needed; resolved previews must never be written
+inside the Git checkout.
 
 Applies back up every touched file under
 `~/.local/state/agents-config/backups/<timestamp>/`.
@@ -75,5 +80,11 @@ Applies back up every touched file under
 For config files that contain non-MCP settings, such as `~/.claude.json` and
 Claude Desktop's config, the apply updates only the `mcpServers` key (or the
 `[mcp_servers.*]` tables in Codex's TOML) and preserves the rest of the file.
-App-managed servers (e.g. Codex's `node_repl`) are ignored during planning and
-round-tripped untouched on write.
+App-managed Codex servers (`node_repl`, `computer-use`, and
+`openaiDeveloperDocs`) are ignored during planning and round-tripped untouched
+on write.
+
+The restricted `devbox-agent` profile explicitly allows only the read-oriented
+DB, New Relic, and Jira MCP definitions. They remain out of scope until their
+commands, paths, and environment variables exist. Give that account separate,
+least-privilege service credentials rather than reusing an admin token.
