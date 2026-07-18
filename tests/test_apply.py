@@ -195,6 +195,89 @@ class YamlSubsetTest(ApplyTestCase):
         self.assertEqual(data["targets"]["codex"]["path"], "~/.codex/AGENTS.md")
 
 
+PROFILES = {
+    "mac-admin": {"platform": "darwin", "mode": "read-write",
+                  "fragments": ["base.md"]},
+    "devbox-agent": {"platform": "linux", "mode": "read-only",
+                     "mcps": "default-deny", "skills": "default-deny",
+                     "fragments": ["base.md", "restricted-agent.md"],
+                     "preflight": ["not-root"]},
+}
+
+
+class ProfileTest(ApplyTestCase):
+    def args(self, *argv):
+        return self.apply.parse_args(
+            ["plan", "--home", str(self.home), *argv])
+
+    def test_yaml_inline_lists(self):
+        data = self.apply.load_yaml_subset(
+            "profiles:\n"
+            "  mac-admin:\n"
+            "    fragments: [base.md, devbox.md]\n"
+            "    preflight: []\n")
+        entry = data["profiles"]["mac-admin"]
+        self.assertEqual(entry["fragments"], ["base.md", "devbox.md"])
+        self.assertEqual(entry["preflight"], [])
+
+    def test_explicit_profile_resolves_and_validates_platform(self):
+        args = self.args("--profile", "mac-admin", "--platform", "darwin")
+        profile = self.apply.resolve_profile(args, PROFILES)
+        self.assertEqual(profile["name"], "mac-admin")
+
+        args = self.args("--profile", "mac-admin", "--platform", "linux")
+        with self.assertRaises(SystemExit):
+            self.apply.resolve_profile(args, PROFILES)
+
+    def test_first_run_requires_profile(self):
+        with self.assertRaises(SystemExit):
+            self.apply.resolve_profile(self.args("--platform", "darwin"), PROFILES)
+        with self.assertRaises(SystemExit):
+            self.apply.resolve_profile(
+                self.args("--profile", "nope", "--platform", "darwin"), PROFILES)
+
+    def test_saved_profile_is_used_when_omitted(self):
+        self.apply.save_local_config(self.home, {"profile": "mac-admin"})
+        args = self.args("--platform", "darwin")
+        profile = self.apply.resolve_profile(args, PROFILES)
+        self.assertEqual(profile["name"], "mac-admin")
+        config = self.home / ".config/agents-config/config.json"
+        self.assertEqual(config.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(config.parent.stat().st_mode & 0o777, 0o700)
+
+    def test_repo_profiles_manifest_parses(self):
+        profiles = self.apply.load_profiles()
+        for name in ("mac-admin", "devbox-admin", "devbox-agent"):
+            self.assertIn(name, profiles)
+        agent = profiles["devbox-agent"]
+        self.assertEqual(agent["mode"], "read-only")
+        self.assertEqual(agent["mcps"], "default-deny")
+        self.assertIn("restricted-agent.md", agent["fragments"])
+
+    def test_unknown_preflight_check_fails(self):
+        with self.assertRaises(SystemExit):
+            self.apply.run_preflight({"preflight": ["frobnicate"]})
+        self.apply.run_preflight({"preflight": ["not-root"]})  # passes as non-root
+
+    def test_read_only_menu_drops_canonical_verbs(self):
+        choices = {"p": "promote", "k": "keep", "o": "overwrite", "s": "skip"}
+        self.assertEqual(
+            list(self.apply.filter_choices(choices, read_only=True)), ["o", "s"])
+        self.assertEqual(self.apply.filter_choices(choices, read_only=False), choices)
+
+    def test_unwritable_checkout_forces_read_only(self):
+        self.apply.CONFIG_ROOT = self.tmp / "checkout"
+        self.apply.CONFIG_ROOT.mkdir()
+        self.assertEqual(self.apply.effective_mode({"mode": "read-write"}), "read-write")
+        self.apply.CONFIG_ROOT.chmod(0o500)
+        try:
+            self.assertEqual(self.apply.effective_mode({"mode": "read-write"}),
+                             "read-only")
+        finally:
+            self.apply.CONFIG_ROOT.chmod(0o700)
+        self.assertEqual(self.apply.effective_mode({"mode": "read-only"}), "read-only")
+
+
 class CliTest(ApplyTestCase):
     def test_plan_subcommand_and_flag(self):
         self.assertTrue(self.apply.parse_args(["plan"]).plan)

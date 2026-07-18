@@ -1,0 +1,38 @@
+# Named profiles: one per (machine, account) shape. agents-config requires an
+# explicit --profile on first run and saves the choice in
+# ~/.config/agents-config/config.json when you run apply.
+#
+# platform   validated against the running host (darwin | linux)
+# mode       read-write may promote into canonical; read-only may only sync
+#            (read-only is also forced whenever the checkout is not writable)
+# code_root  expands ${CODE_ROOT} in MCP definitions
+# fragments  ordered Instructions/fragments/* rendered into provider files
+# mcps       default-allow | default-deny — servers.json `profiles` lists
+#            override the default per server
+# skills     default-allow | default-deny — skills.json `profiles` lists
+#            override the default per skill
+# preflight  hard checks that must pass before anything runs
+version: 1
+profiles:
+  mac-admin:
+    platform: darwin
+    mode: read-write
+    code_root: ~/Code
+    fragments: [base.md]
+    mcps: default-allow
+    skills: default-allow
+  devbox-admin:
+    platform: linux
+    mode: read-write
+    code_root: /srv/code
+    fragments: [base.md, devbox.md]
+    mcps: default-allow
+    skills: default-allow
+  devbox-agent:
+    platform: linux
+    mode: read-only
+    code_root: /srv/code
+    fragments: [base.md, devbox.md, restricted-agent.md]
+    mcps: default-deny
+    skills: default-deny
+    preflight: [not-root, no-privileged-groups]

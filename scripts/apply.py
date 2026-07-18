@@ -50,6 +50,7 @@ import difflib
 import hashlib
 import importlib.util
 import json
+import os
 import shutil
 import sys
 import tomllib
@@ -57,6 +58,7 @@ from datetime import datetime
 from pathlib import Path
 
 CONFIG_ROOT = Path(__file__).resolve().parents[1]
+PROFILES_PATH = CONFIG_ROOT / "profiles.yaml"
 MCPS_ROOT = CONFIG_ROOT / "MCPs"
 SERVERS_PATH = MCPS_ROOT / "servers.json"
 SKILLS_ROOT = CONFIG_ROOT / "Skills"
@@ -314,9 +316,10 @@ def classify_skill(target, canonical_path):
 
 # ---------------------------------------------------------------- fetch: instructions
 
-def load_yaml_subset(text):
-    """Minimal YAML: nested mappings of scalar strings, comments. That is all
-    instructions.yaml needs, and it keeps the repo dependency-free."""
+def load_yaml_subset(text, origin="yaml"):
+    """Minimal YAML: nested mappings of scalar strings and inline [a, b] lists,
+    plus comments. That is all our manifests need, and it keeps the repo
+    dependency-free."""
     root = {}
     stack = [(-1, root)]
     for raw in text.splitlines():
@@ -326,17 +329,131 @@ def load_yaml_subset(text):
         indent = len(line) - len(line.lstrip())
         key, sep, value = line.strip().partition(":")
         if not sep:
-            sys.exit(f"error: {INSTRUCTIONS_MANIFEST}: cannot parse line: {raw!r}")
-        value = value.strip().strip("'\"")
+            sys.exit(f"error: {origin}: cannot parse line: {raw!r}")
+        value = value.strip()
         while stack and indent <= stack[-1][0]:
             stack.pop()
         parent = stack[-1][1]
         if value == "":
             parent[key] = {}
             stack.append((indent, parent[key]))
+        elif value.startswith("[") and value.endswith("]"):
+            inner = value[1:-1].strip()
+            parent[key] = [item.strip().strip("'\"")
+                           for item in inner.split(",")] if inner else []
         else:
-            parent[key] = value
+            parent[key] = value.strip("'\"")
     return root
+
+
+# ---------------------------------------------------------------- profiles
+
+POLICY_VALUES = ("default-allow", "default-deny")
+
+
+def config_dir(home):
+    return home / ".config" / "agents-config"
+
+
+def state_dir(home):
+    return home / ".local" / "state" / "agents-config"
+
+
+def load_local_config(home):
+    path = config_dir(home) / "config.json"
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text())
+    except Exception as exc:
+        sys.exit(f"error: cannot parse {path}: {exc}")
+
+
+def private_mkdir(path):
+    """mkdir -p with 0700 on every directory we create (never loosens existing)."""
+    missing = []
+    probe = path
+    while not probe.exists():
+        missing.append(probe)
+        probe = probe.parent
+    path.mkdir(parents=True, exist_ok=True)
+    for created in missing:
+        os.chmod(created, 0o700)
+
+
+def save_local_config(home, updates):
+    path = config_dir(home) / "config.json"
+    data = load_local_config(home)
+    data.update(updates)
+    private_mkdir(path.parent)
+    path.write_text(json.dumps(data, indent=2) + "\n")
+    os.chmod(path, 0o600)
+
+
+def load_profiles():
+    if not PROFILES_PATH.exists():
+        sys.exit(f"error: {PROFILES_PATH} not found")
+    data = load_yaml_subset(PROFILES_PATH.read_text(), origin="profiles.yaml")
+    return data.get("profiles") or {}
+
+
+def resolve_profile(args, profiles):
+    name = args.profile or load_local_config(args.home).get("profile")
+    available = ", ".join(sorted(profiles)) or "none defined"
+    if not name:
+        sys.exit("error: no profile selected. Pass --profile <name> "
+                 f"(available: {available}); apply saves the choice "
+                 "in ~/.config/agents-config/config.json for later runs.")
+    if name not in profiles:
+        sys.exit(f"error: unknown profile {name!r} (available: {available})")
+    profile = dict(profiles[name])
+    profile["name"] = name
+    if profile.get("platform") not in ("darwin", "linux"):
+        sys.exit(f"error: profiles.yaml: {name}: platform must be darwin or linux")
+    if profile["platform"] != args.platform:
+        sys.exit(f"error: profile {name!r} is for {profile['platform']}, "
+                 f"but this host is {args.platform}")
+    if profile.get("mode", "read-write") not in ("read-write", "read-only"):
+        sys.exit(f"error: profiles.yaml: {name}: mode must be read-write or read-only")
+    for policy in ("mcps", "skills"):
+        if profile.get(policy, "default-allow") not in POLICY_VALUES:
+            sys.exit(f"error: profiles.yaml: {name}: {policy} must be one of: "
+                     + ", ".join(POLICY_VALUES))
+    if not isinstance(profile.get("fragments", []), list):
+        sys.exit(f"error: profiles.yaml: {name}: fragments must be a [list]")
+    return profile
+
+
+def run_preflight(profile):
+    for check in profile.get("preflight", []):
+        if check == "not-root":
+            if os.geteuid() == 0:
+                sys.exit(f"error: preflight {check}: refusing to run as root")
+        elif check == "no-privileged-groups":
+            import grp
+            names = set()
+            for gid in os.getgroups():
+                try:
+                    names.add(grp.getgrgid(gid).gr_name)
+                except KeyError:
+                    pass
+            privileged = names & {"root", "sudo", "wheel", "admin"}
+            if privileged:
+                sys.exit(f"error: preflight {check}: account belongs to "
+                         f"privileged group(s): {', '.join(sorted(privileged))}")
+        else:
+            sys.exit(f"error: profiles.yaml: unknown preflight check {check!r}")
+
+
+def effective_mode(profile):
+    """Profile mode, downgraded to read-only when the checkout is not ours to
+    write. Read-only may sync canonical -> home but never promote/import."""
+    mode = profile.get("mode", "read-write")
+    if mode == "read-write" and not os.access(CONFIG_ROOT, os.W_OK):
+        print("note: checkout is not writable; running in read-only mode",
+              file=sys.stderr)
+        mode = "read-only"
+    return mode
 
 
 def load_instruction_targets():
@@ -412,7 +529,7 @@ def print_instructions_plan(items):
     return drifted
 
 
-def reconcile_instructions(items, targets, default_source, secret_map):
+def reconcile_instructions(items, targets, default_source, secret_map, read_only=False):
     """-> (new_targets, source_updates, resolutions, skipped).
     source_updates: {relpath under Instructions/: new content}."""
     new_targets = {p: dict(e) for p, e in targets.items()}
@@ -440,13 +557,13 @@ def reconcile_instructions(items, targets, default_source, secret_map):
             print("    " + reverse_substitute(line, secret_map))
         if len(diff) > 80:
             print(f"    ... ({len(diff) - 80} more diff lines)")
-        choice = ask("", {
+        choice = ask("", filter_choices({
             "p": f"promote — live becomes Instructions/{source} "
                  "(ripples to every provider on that source)",
             "k": "keep — diverge: store as per-provider source file(s)",
             "o": "overwrite — regenerate from canonical",
             "s": "skip",
-        })
+        }, read_only))
         if choice == "p":
             source_updates[source] = live
             resolutions.update({p: "sync" for p in providers})
@@ -466,11 +583,11 @@ def reconcile_instructions(items, targets, default_source, secret_map):
             continue
         index += 1
         print(f"\n[{index}/{total}] instructions — missing in {provider} ({cell['path']})")
-        choice = ask("", {
+        choice = ask("", filter_choices({
             "o": "overwrite — write it from canonical",
             "k": "keep — stop targeting this provider (instructions.yaml)",
             "s": "skip",
-        })
+        }, read_only))
         if choice == "o":
             resolutions[provider] = "sync"
         elif choice == "k":
@@ -536,6 +653,14 @@ def print_matrix(title, items, columns):
 
 # ---------------------------------------------------------------- reconcile
 
+def filter_choices(choices, read_only):
+    """Read-only mode may sync or skip, never promote/keep/import: every verb
+    that would rewrite canonical files (p/k/t) is removed from the menu."""
+    if not read_only:
+        return choices
+    return {key: label for key, label in choices.items() if key in ("o", "s")}
+
+
 def ask(prompt, choices):
     """choices: ordered {key: label}."""
     menu = "  " + "\n  ".join(f"({key}) {label}" for key, label in choices.items())
@@ -558,7 +683,7 @@ def version_groups(cells, state):
     return groups
 
 
-def reconcile_mcps(items, servers, secret_map):
+def reconcile_mcps(items, servers, secret_map, read_only=False):
     """Mutates a deep copy of servers; returns (new_servers, resolutions, skips).
     resolutions: {(name, client): 'sync'|'remove'}; 'sync' = regenerate from new
     canonical, 'remove' = delete from the provider. Skipped cells keep live."""
@@ -580,11 +705,11 @@ def reconcile_mcps(items, servers, secret_map):
                 live = cells[clients[0]]["live"]
                 print(f"  added in {', '.join(clients)} — not in canonical:")
                 print("    " + render(live, secret_map))
-                choice = ask("", {
+                choice = ask("", filter_choices({
                     "k": f"keep — import into servers.json, targets: {', '.join(clients)}",
                     "o": "overwrite — remove it from those provider(s)",
                     "s": "skip — leave both, ask next apply",
-                })
+                }, read_only))
                 if choice == "k":
                     imported = reverse_substitute(live, secret_map)
                     if name in new_servers:  # a second, different version was kept
@@ -607,12 +732,12 @@ def reconcile_mcps(items, servers, secret_map):
             print(f"  modified in {', '.join(clients)}:")
             print("    canonical would generate: " + render(desired, secret_map))
             print("    live:                     " + render(live, secret_map))
-            choice = ask("", {
+            choice = ask("", filter_choices({
                 "p": "promote — this becomes the canonical base for every provider",
                 "k": "keep — store as per-client override(s), base untouched",
                 "o": "overwrite — regenerate from canonical",
                 "s": "skip",
-            })
+            }, read_only))
             if choice == "p":
                 entry["config"] = reverse_substitute(live, secret_map)
                 for client in clients:
@@ -630,11 +755,11 @@ def reconcile_mcps(items, servers, secret_map):
         for client, cell in cells.items():
             if cell["state"] == MISSING:
                 print(f"  missing in {client} (canonical targets it)")
-                choice = ask("", {
+                choice = ask("", filter_choices({
                     "o": "overwrite — re-add it from canonical",
                     "k": "keep — stop targeting this provider",
                     "s": "skip",
-                })
+                }, read_only))
                 if choice == "o":
                     resolutions[(name, client)] = "sync"
                 elif choice == "k":
@@ -646,11 +771,11 @@ def reconcile_mcps(items, servers, secret_map):
             elif cell["state"] == UNTARGETED:
                 print(f"  present in {client}, but canonical does not target it:")
                 print("    " + render(cell["live"], secret_map))
-                choice = ask("", {
+                choice = ask("", filter_choices({
                     "k": "keep — target this provider in canonical",
                     "o": "overwrite — remove it from the provider",
                     "s": "skip",
-                })
+                }, read_only))
                 if choice == "k":
                     entry["clients"].append(client)
                     imported = reverse_substitute(cell["live"], secret_map)
@@ -665,7 +790,7 @@ def reconcile_mcps(items, servers, secret_map):
     return new_servers, resolutions, skipped
 
 
-def reconcile_skills(items, canonical, targets, home):
+def reconcile_skills(items, canonical, targets, home, read_only=False):
     """-> (ops, new_targets, skipped). ops: (action, name, agent_or_None, src, dest).
     new_targets is the (possibly rewritten) Skills/skills.json content."""
     ops = []
@@ -705,12 +830,12 @@ def reconcile_skills(items, canonical, targets, home):
             for digest, agents in groups.items():
                 src = Path(added[agents[0]]["path"])
                 print(f"  added in {', '.join(agents)}: {src}")
-                choice = ask("", {
+                choice = ask("", filter_choices({
                     "k": "keep — import into canonical, target ALL agents",
                     "t": f"keep here — import, target only: {', '.join(agents)}",
                     "o": "overwrite — remove it from the agent(s) (backed up)",
                     "s": "skip",
-                })
+                }, read_only))
                 if choice in ("k", "t"):
                     ops.append(("import", name, None, src, CANONICAL_SKILLS / name))
                     chosen = list(SKILL_AGENTS) if choice == "k" else agents
@@ -729,11 +854,11 @@ def reconcile_skills(items, canonical, targets, home):
         if missing and name in canonical:
             show_header()
             print(f"  missing in {', '.join(missing)} (canonical targets them)")
-            choice = ask("", {
+            choice = ask("", filter_choices({
                 "o": "overwrite — link from canonical",
                 "k": "keep — stop targeting these agent(s) (Skills/skills.json)",
                 "s": "skip",
-            })
+            }, read_only))
             if choice == "o":
                 for agent in missing:
                     ops.append(("link", name, agent, CANONICAL_SKILLS / name,
@@ -749,21 +874,21 @@ def reconcile_skills(items, canonical, targets, home):
                 target = home / SKILL_AGENTS[agent] / name
                 if cell["identical"]:
                     print(f"  unlinked in {agent} (content identical to canonical)")
-                    choice = ask("", {
+                    choice = ask("", filter_choices({
                         "o": "overwrite — replace the copy with the canonical symlink",
                         "s": "skip",
-                    })
+                    }, read_only))
                     if choice == "o":
                         ops.append(("link", name, agent, CANONICAL_SKILLS / name, target))
                     else:
                         skipped.append((name, [agent], UNLINKED))
                 else:
                     print(f"  unlinked in {agent} and content DIFFERS from canonical")
-                    choice = ask("", {
+                    choice = ask("", filter_choices({
                         "k": "keep — pull the edited content into canonical, then relink",
                         "o": "overwrite — discard the local edits, relink (backed up)",
                         "s": "skip",
-                    })
+                    }, read_only))
                     if choice == "k":
                         ops.append(("import", name, None, target, CANONICAL_SKILLS / name))
                         ops.append(("link", name, agent, CANONICAL_SKILLS / name, target))
@@ -782,11 +907,11 @@ def reconcile_skills(items, canonical, targets, home):
                 if cell["kind"] == "dir":
                     keep_label += (", relink the copy" if cell["identical"] else
                                    "; edits go into canonical (ALL agents), then relink")
-                choice = ask("", {
+                choice = ask("", filter_choices({
                     "k": keep_label,
                     "o": "overwrite — remove it from the agent (backed up)",
                     "s": "skip",
-                })
+                }, read_only))
                 if choice == "k":
                     set_clients(name, clients_of(name) + [agent])
                     if cell["kind"] == "dir":
@@ -930,7 +1055,7 @@ def apply_skill_ops(ops, stamp):
 
 # ---------------------------------------------------------------- main
 
-def emit_json_plan(mcp_items, skill_items, instr_items, secret_map):
+def emit_json_plan(mcp_items, skill_items, instr_items, secret_map, profile_name):
     def cells_out(items, mask_live):
         out = {}
         for name, cells in items.items():
@@ -944,6 +1069,7 @@ def emit_json_plan(mcp_items, skill_items, instr_items, secret_map):
         return out
 
     print(json.dumps({
+        "profile": profile_name,
         "mcps": cells_out(mcp_items, mask_live=True),
         "skills": cells_out(skill_items, mask_live=False),
         "instructions": {
@@ -985,6 +1111,12 @@ def main():
     args = parse_args()
     in_scope = lambda section: args.only in (None, section)
 
+    profile = resolve_profile(args, load_profiles())
+    run_preflight(profile)
+    read_only = effective_mode(profile) == "read-only"
+    if not args.plan:
+        save_local_config(args.home, {"profile": profile["name"]})
+
     genmod = load_genmod()
     servers = genmod.load_servers()
     env = genmod.load_env()
@@ -1008,10 +1140,12 @@ def main():
         emit_json_plan(
             {n: c for n, c in mcp_items.items()
              if any(x["state"] != IN_SYNC for x in c.values())},
-            skill_items, instr_items, secret_map,
+            skill_items, instr_items, secret_map, profile["name"],
         )
         return
 
+    print(f"profile: {profile['name']} ({args.platform}, "
+          f"{'read-only' if read_only else 'read-write'})")
     mcp_drift = print_matrix("MCP DRIFT PLAN", mcp_items, MCP_CLIENTS) \
         if in_scope("mcps") else {}
     skill_drift = print_matrix("SKILL DRIFT PLAN", skill_items, list(SKILL_AGENTS)) \
@@ -1031,16 +1165,17 @@ def main():
     mcp_skipped = []
     if mcp_drift:
         new_servers, resolutions, mcp_skipped = reconcile_mcps(
-            mcp_drift, servers, secret_map)
+            mcp_drift, servers, secret_map, read_only)
     skill_ops, new_skill_targets, skill_skipped = ([], skill_targets, [])
     if skill_drift:
         skill_ops, new_skill_targets, skill_skipped = reconcile_skills(
-            skill_drift, canonical_skills, skill_targets, home)
+            skill_drift, canonical_skills, skill_targets, home, read_only)
     new_instr_targets, source_updates, instr_resolutions, instr_skipped = \
         (instr_targets, {}, {}, [])
     if instr_drift:
         new_instr_targets, source_updates, instr_resolutions, instr_skipped = \
-            reconcile_instructions(instr_items, instr_targets, default_source, secret_map)
+            reconcile_instructions(instr_items, instr_targets, default_source,
+                                   secret_map, read_only)
 
     # ---- effect preview (recomputed rows, including promote ripple)
     # out-of-scope MCPs must stay exactly live: never regenerate
@@ -1103,6 +1238,10 @@ def main():
 
     # ---- write
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    if read_only:
+        assert norm(new_servers) == norm(servers)
+        assert not source_updates and new_skill_targets == skill_targets
+        assert new_instr_targets == instr_targets
     if norm(new_servers) != norm(servers):
         backup(SERVERS_PATH, MCPS_ROOT, stamp)
         SERVERS_PATH.write_text(
