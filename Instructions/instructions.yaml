@@ -1,14 +1,19 @@
 # Which instructions file belongs to which provider.
-# `source` is relative to Instructions/ and defaults to default_source --
-# point a provider at its own file (source: codex.md) to diverge it.
-# NOTE: hand-written comments below this header are lost when apply
-# rewrites this file.
-version: 1
-default_source: AGENTS.md
+#
+# Providers render as the concatenation of the active profile's fragments
+# (profiles.yaml `fragments`, files under fragments/), plus this provider's
+# optional `extra` fragment. An explicit `source` opts the provider out of
+# fragment rendering entirely (full divergence, the old v1 behavior).
+# `legacy` names an old live path: apply migrates it to `path` (backup, write,
+# remove) so instructions never load twice.
+# NOTE: hand-written comments below this header are lost when apply rewrites
+# this file.
+version: 2
 targets:
   claude-code:
-    path: ~/CLAUDE.md
-    source: claude-code.md
+    path: ~/.claude/CLAUDE.md
+    legacy: ~/CLAUDE.md
+    extra: providers/claude-code.md
   codex:
     path: ~/.codex/AGENTS.md
   cursor:

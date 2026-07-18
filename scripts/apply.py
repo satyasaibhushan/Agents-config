@@ -24,15 +24,22 @@ targeting  skills mirror the MCP `clients` key via Skills/skills.json:
            Reconcile decisions (keep here / stop targeting / target this agent)
            rewrite the manifest on confirm.
 instructions (AC-3)
-           Instructions/instructions.yaml maps provider -> instructions file:
+           Each provider file renders as the concatenation of the active
+           profile's Instructions/fragments/* plus an optional per-provider
+           `extra` fragment (Instructions/instructions.yaml, version 2):
              targets:
                claude-code:
-                 path: ~/CLAUDE.md
-                 source: AGENTS.md   # optional; defaults to default_source
-           Every provider renders from the shared Instructions/AGENTS.md until
-           a reconcile decision (keep = diverge) points its `source` at a
-           per-provider file. Same verbs as MCPs: promote / keep / overwrite /
-           skip, with promote rippling to every provider on the same source.
+                 path: ~/.claude/CLAUDE.md
+                 legacy: ~/CLAUDE.md              # old path; apply migrates it
+                 extra: providers/claude-code.md  # appended after fragments
+           Same verbs as MCPs. Promote maps each live diff hunk back to the
+           fragment it falls in and edits that source (rippling to every
+           provider that renders it); insertions on a fragment boundary prompt
+           for which side, and hunks rewriting across a boundary block promote.
+           `keep` diverges the provider onto a whole-file providers/<name>.md
+           `source`, opting it out of fragment rendering. v1 manifests
+           (default_source) still read fine. `legacy` migration writes the new
+           path and backs up + removes the old one so rules never load twice.
 
 Usage (via scripts/agents-config, which picks a Python >= 3.11):
   agents-config apply              interactive reconcile + apply
@@ -92,7 +99,8 @@ MISSING = "missing"
 UNLINKED = "unlinked"
 UNTARGETED = "untargeted"  # in canonical, provider not targeted, but present live
 FOREIGN = "foreign"        # symlink pointing somewhere non-canonical
-DRIFT_STATES = {ADDED, MODIFIED, MISSING, UNLINKED, UNTARGETED}
+MIGRATE = "migrate"        # content in sync, but a legacy path still loads
+DRIFT_STATES = {ADDED, MODIFIED, MISSING, UNLINKED, UNTARGETED, MIGRATE}
 
 
 def load_genmod():
@@ -457,62 +465,124 @@ def effective_mode(profile):
 
 
 def load_instruction_targets():
-    """-> ({provider: {"path": "~/...", "source": "<file>"}}, default_source).
-    Paths are stored with ~/ and expanded against --home at use time."""
+    """-> (targets, default_source). v2 manifests return default_source=None;
+    entries may carry source/extra/legacy. v1 manifests (default_source set)
+    keep the old whole-file rendering for every entry."""
     if not INSTRUCTIONS_MANIFEST.exists():
-        return {}, "AGENTS.md"
-    data = load_yaml_subset(INSTRUCTIONS_MANIFEST.read_text())
-    default_source = data.get("default_source", "AGENTS.md")
+        return {}, None
+    data = load_yaml_subset(INSTRUCTIONS_MANIFEST.read_text(),
+                            origin="instructions.yaml")
+    v1 = "default_source" in data or data.get("version") == "1"
+    default_source = data.get("default_source", "AGENTS.md") if v1 else None
     targets = {}
     for provider, entry in (data.get("targets") or {}).items():
         if not isinstance(entry, dict) or "path" not in entry:
             sys.exit(f"error: instructions.yaml: {provider}: needs a path")
-        targets[provider] = {
-            "path": entry["path"],
-            "source": entry.get("source", default_source),
-        }
+        target = {"path": entry["path"]}
+        if v1:
+            target["source"] = entry.get("source", default_source)
+        else:
+            for key in ("source", "extra", "legacy"):
+                if key in entry:
+                    target[key] = entry[key]
+        targets[provider] = target
     return targets, default_source
 
 
-def write_instruction_targets(targets, default_source):
+def write_instruction_targets(targets):
     lines = [
         "# Which instructions file belongs to which provider.",
-        "# `source` is relative to Instructions/ and defaults to default_source --",
-        "# point a provider at its own file (source: codex.md) to diverge it.",
+        "# Rendering: active profile fragments + optional per-provider `extra`;",
+        "# an explicit `source` opts the provider out of fragment rendering.",
+        "# `legacy` is an old live path that apply migrates to `path`.",
         "# NOTE: hand-written comments below this header are lost when apply",
         "# rewrites this file.",
-        "version: 1",
-        f"default_source: {default_source}",
+        "version: 2",
         "targets:",
     ]
     for provider in sorted(targets, key=str.lower):
         entry = targets[provider]
         lines.append(f"  {provider}:")
         lines.append(f"    path: {entry['path']}")
-        if entry.get("source", default_source) != default_source:
-            lines.append(f"    source: {entry['source']}")
+        for key in ("legacy", "extra", "source"):
+            if entry.get(key):
+                lines.append(f"    {key}: {entry[key]}")
     INSTRUCTIONS_MANIFEST.write_text("\n".join(lines) + "\n")
 
 
-def instruction_path(entry, home):
-    path = entry["path"]
-    return home / path[2:] if path.startswith("~/") else Path(path)
+def instruction_path(path_str, home):
+    return home / path_str[2:] if path_str.startswith("~/") else Path(path_str)
 
 
-def plan_instructions(targets, home):
-    """-> {provider: {state, live, desired, path, source}}."""
+def instruction_sources(entry, profile, default_source):
+    """-> ordered source relpaths (under Instructions/) whose concatenation
+    renders this provider. A diverged provider has exactly one."""
+    if entry.get("source"):
+        return [entry["source"]]
+    if default_source:  # v1 manifest
+        return [default_source]
+    sources = [f"fragments/{name}" for name in profile.get("fragments", [])]
+    if entry.get("extra"):
+        sources.append(entry["extra"])
+    if not sources:
+        sys.exit(f"error: profile {profile.get('name')!r} renders no "
+                 "instruction fragments")
+    return sources
+
+
+def render_instruction(relpaths, overrides=None):
+    """-> (text, spans). Fragments are joined by exactly one blank separator
+    line, so rendering is a pure concatenation: every rendered line maps back
+    to one source file, and spans (start, end, relpath) record the mapping."""
+    parts = []
+    for relpath in relpaths:
+        if overrides is not None and relpath in overrides:
+            content = overrides[relpath]
+        else:
+            path = INSTRUCTIONS_ROOT / relpath
+            if not path.exists():
+                sys.exit(f"error: instructions source Instructions/{relpath} "
+                         "does not exist")
+            content = path.read_text()
+        parts.append(content.rstrip("\n"))
+    spans = []
+    line = 0
+    for relpath, part in zip(relpaths, parts):
+        count = part.count("\n") + 1
+        spans.append((line, line + count, relpath))
+        line += count + 1  # the separator blank line
+    return "\n\n".join(parts) + "\n", spans
+
+
+def plan_instructions(targets, home, profile, default_source):
+    """-> {provider: cell}. live = what reconcile diffs against (the legacy
+    file's content when only it exists); target_live = content at the real
+    target path. MIGRATE = content is right but the legacy file still loads."""
     items = {}
     for provider, entry in targets.items():
-        source_path = INSTRUCTIONS_ROOT / entry["source"]
-        if not source_path.exists():
-            sys.exit(f"error: instructions.yaml: {provider}: "
-                     f"source Instructions/{entry['source']} does not exist")
-        desired = source_path.read_text()
-        path = instruction_path(entry, home)
-        live = path.read_text() if path.exists() else None
-        state = MISSING if live is None else IN_SYNC if live == desired else MODIFIED
-        items[provider] = {"state": state, "live": live, "desired": desired,
-                           "path": path, "source": entry["source"]}
+        relpaths = instruction_sources(entry, profile, default_source)
+        desired, spans = render_instruction(relpaths)
+        path = instruction_path(entry["path"], home)
+        target_live = path.read_text() if path.exists() else None
+        legacy = instruction_path(entry["legacy"], home) if entry.get("legacy") else None
+        legacy_live = legacy.read_text() if legacy and legacy.exists() else None
+
+        live = target_live if target_live is not None else legacy_live
+        if live is None:
+            state = MISSING
+        elif live != desired:
+            state = MODIFIED
+        elif legacy_live is not None:
+            state = MIGRATE
+        else:
+            state = IN_SYNC
+        items[provider] = {
+            "state": state, "live": live, "desired": desired, "path": path,
+            "target_live": target_live,
+            "legacy": legacy if legacy_live is not None else None,
+            "spans": spans, "sources": relpaths,
+            "source": relpaths[0] if len(relpaths) == 1 else "fragments",
+        }
     return items
 
 
@@ -529,49 +599,123 @@ def print_instructions_plan(items):
     return drifted
 
 
-def reconcile_instructions(items, targets, default_source, secret_map, read_only=False):
+def map_hunks_to_sources(old_lines, live_lines, spans):
+    """-> (edits, boundary_inserts, blocked).
+    edits: {relpath: [(lo, hi, replacement_lines)]} in source-local coords —
+      hunks that fall entirely within one fragment promote automatically.
+    boundary_inserts: [(prev_relpath, next_relpath, lines)] pure insertions
+      between fragments — the caller asks which side they belong to.
+    blocked: hunks rewriting lines across a fragment boundary — promote is
+      unavailable for the whole edit when any exist."""
+    edits, boundary, blocked = {}, [], []
+    matcher = difflib.SequenceMatcher(a=old_lines, b=live_lines, autojunk=False)
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            continue
+        repl = live_lines[j1:j2]
+        if i1 == i2:  # pure insertion at old-render position i1
+            inside = next(((s, e, rel) for s, e, rel in spans if s < i1 < e), None)
+            if inside:
+                edits.setdefault(inside[2], []).append(
+                    (i1 - inside[0], i1 - inside[0], repl))
+            else:
+                prev = next((rel for s, e, rel in reversed(spans) if e <= i1), None)
+                nxt = next((rel for s, e, rel in spans if s >= i1), None)
+                boundary.append((prev, nxt, repl))
+            continue
+        span = next(((s, e, rel) for s, e, rel in spans if s <= i1 and i2 <= e), None)
+        if span:
+            edits.setdefault(span[2], []).append((i1 - span[0], i2 - span[0], repl))
+        else:
+            blocked.append((i1, i2, repl))
+    return edits, boundary, blocked
+
+
+def apply_source_edits(relpath, source_edits, overrides):
+    """Apply source-local line edits on top of any pending override content."""
+    base = overrides.get(relpath)
+    if base is None:
+        base = (INSTRUCTIONS_ROOT / relpath).read_text()
+    lines = base.rstrip("\n").split("\n")
+    for lo, hi, repl in sorted(source_edits, reverse=True):
+        lines[lo:hi] = repl
+    overrides[relpath] = "\n".join(lines) + "\n"
+
+
+def reconcile_instructions(items, targets, secret_map, read_only=False):
     """-> (new_targets, source_updates, resolutions, skipped).
-    source_updates: {relpath under Instructions/: new content}."""
+    source_updates: {relpath under Instructions/: new content}. A provider
+    resolved \'sync\' gets rewritten at its target path; a live legacy file is
+    backed up and removed in the same apply (see final_instructions)."""
     new_targets = {p: dict(e) for p, e in targets.items()}
     source_updates = {}
     resolutions = {}
     skipped = []
 
-    drifted = {p: c for p, c in items.items() if c["state"] in (MODIFIED, MISSING)}
-    groups = {}  # identical live edits against the same source -> one decision
+    drifted = {p: c for p, c in items.items() if c["state"] != IN_SYNC}
+    groups = {}  # identical live edits over the same sources -> one decision
     for provider, cell in drifted.items():
         if cell["state"] == MODIFIED:
-            groups.setdefault((cell["source"], cell["live"]), []).append(provider)
-    total = len(groups) + sum(1 for c in drifted.values() if c["state"] == MISSING)
+            groups.setdefault((tuple(cell["sources"]), cell["live"]), []).append(provider)
+    total = len(groups) + sum(
+        1 for c in drifted.values() if c["state"] in (MISSING, MIGRATE))
     index = 0
 
-    for (source, live), providers in groups.items():
+    for (sources, live), providers in groups.items():
         index += 1
         cell = items[providers[0]]
+        label = ", ".join(f"Instructions/{s}" for s in sources)
         print(f"\n[{index}/{total}] instructions — modified in {', '.join(providers)} "
-              f"(source: Instructions/{source})")
+              f"(rendered from: {label})")
+        old_lines = cell["desired"].splitlines()
+        live_lines = live.splitlines()
         diff = list(difflib.unified_diff(
-            cell["desired"].splitlines(), live.splitlines(),
-            fromfile=f"Instructions/{source}", tofile="live", lineterm=""))
+            old_lines, live_lines,
+            fromfile="canonical render", tofile="live", lineterm=""))
         for line in diff[:80]:
             print("    " + reverse_substitute(line, secret_map))
         if len(diff) > 80:
             print(f"    ... ({len(diff) - 80} more diff lines)")
-        choice = ask("", filter_choices({
-            "p": f"promote — live becomes Instructions/{source} "
-                 "(ripples to every provider on that source)",
-            "k": "keep — diverge: store as per-provider source file(s)",
+
+        edits, boundary, blocked = map_hunks_to_sources(
+            old_lines, live_lines, cell["spans"])
+        choices = {
+            "p": "promote — fold the live edits back into the source file(s) "
+                 "(ripples to every provider rendering them)",
+            "k": "keep — diverge: store the whole live file as a per-provider source",
             "o": "overwrite — regenerate from canonical",
             "s": "skip",
-        }, read_only))
+        }
+        if blocked:
+            choices.pop("p")
+            print("    (promote unavailable: an edit rewrites lines across a "
+                  "fragment boundary — split the edit or diverge)")
+        choice = ask("", filter_choices(choices, read_only))
         if choice == "p":
-            source_updates[source] = live
+            for prev, nxt, repl in boundary:
+                print("    inserted lines sit on the boundary between two fragments:")
+                for line in repl[:10]:
+                    print("      + " + reverse_substitute(line, secret_map))
+                options = {}
+                if prev:
+                    options["a"] = f"append to Instructions/{prev}"
+                if nxt:
+                    options["b"] = f"prepend to Instructions/{nxt}"
+                options["s"] = "skip this inserted block"
+                picked = ask("", options)
+                if picked == "a":
+                    edits.setdefault(prev, []).append((sys.maxsize, sys.maxsize, repl))
+                elif picked == "b":
+                    edits.setdefault(nxt, []).append((0, 0, repl))
+            for relpath, source_edits in edits.items():
+                apply_source_edits(relpath, source_edits, source_updates)
             resolutions.update({p: "sync" for p in providers})
         elif choice == "k":
             for provider in providers:
-                relpath = f"{provider}.md"
+                relpath = f"providers/{provider}.md"
                 source_updates[relpath] = live
                 new_targets[provider]["source"] = relpath
+                new_targets[provider].pop("extra", None)
                 resolutions[provider] = "sync"
         elif choice == "o":
             resolutions.update({p: "sync" for p in providers})
@@ -579,43 +723,60 @@ def reconcile_instructions(items, targets, default_source, secret_map, read_only
             skipped.append(("instructions", providers, MODIFIED))
 
     for provider, cell in drifted.items():
-        if cell["state"] != MISSING:
-            continue
-        index += 1
-        print(f"\n[{index}/{total}] instructions — missing in {provider} ({cell['path']})")
-        choice = ask("", filter_choices({
-            "o": "overwrite — write it from canonical",
-            "k": "keep — stop targeting this provider (instructions.yaml)",
-            "s": "skip",
-        }, read_only))
-        if choice == "o":
-            resolutions[provider] = "sync"
-        elif choice == "k":
-            new_targets.pop(provider, None)
-        else:
-            skipped.append(("instructions", [provider], MISSING))
+        if cell["state"] == MISSING:
+            index += 1
+            print(f"\n[{index}/{total}] instructions — missing in {provider} "
+                  f"({cell['path']})")
+            choice = ask("", filter_choices({
+                "o": "overwrite — write it from canonical",
+                "k": "keep — stop targeting this provider (instructions.yaml)",
+                "s": "skip",
+            }, read_only))
+            if choice == "o":
+                resolutions[provider] = "sync"
+            elif choice == "k":
+                new_targets.pop(provider, None)
+            else:
+                skipped.append(("instructions", [provider], MISSING))
+        elif cell["state"] == MIGRATE:
+            index += 1
+            print(f"\n[{index}/{total}] instructions — {provider}: content in sync "
+                  f"but {cell['legacy']} still loads (target: {cell['path']})")
+            choice = ask("", {
+                "o": f"migrate — write {cell['path']}, back up and remove "
+                     f"{cell['legacy']}",
+                "s": "skip",
+            })
+            if choice == "o":
+                resolutions[provider] = "sync"
+            else:
+                skipped.append(("instructions", [provider], MIGRATE))
 
     return new_targets, source_updates, resolutions, skipped
 
 
-def final_instructions(items, new_targets, source_updates, resolutions, home):
-    """-> [(provider, path, content)] live-file writes, incl. promote ripple."""
-    ops = []
+def final_instructions(items, new_targets, source_updates, resolutions, home,
+                       profile, default_source):
+    """-> (writes, removals). writes: (provider, path, content); removals:
+    (provider, legacy_path) for migrated legacy files. Promote ripple happens
+    here: desired is re-rendered with source_updates layered on top."""
+    writes, removals = [], []
     for provider, entry in new_targets.items():
-        source_path = INSTRUCTIONS_ROOT / entry["source"]
-        desired = source_updates.get(entry["source"])
-        if desired is None:
-            if not source_path.exists():
-                continue
-            desired = source_path.read_text()
+        relpaths = instruction_sources(entry, profile, default_source)
+        if not all((INSTRUCTIONS_ROOT / r).exists() or r in source_updates
+                   for r in relpaths):
+            continue
+        desired, _ = render_instruction(relpaths, overrides=source_updates)
         cell = items.get(provider)
-        if cell and cell["state"] in (MODIFIED, MISSING) and provider not in resolutions:
+        if cell and cell["state"] != IN_SYNC and provider not in resolutions:
             continue  # skipped: leave both sides alone
-        live = cell["live"] if cell else None
-        if live != desired:
-            path = cell["path"] if cell else instruction_path(entry, home)
-            ops.append((provider, path, desired))
-    return ops
+        target_live = cell["target_live"] if cell else None
+        path = cell["path"] if cell else instruction_path(entry["path"], home)
+        if target_live != desired:
+            writes.append((provider, path, desired))
+        if cell and cell.get("legacy") and resolutions.get(provider) == "sync":
+            removals.append((provider, cell["legacy"]))
+    return writes, removals
 
 
 # ---------------------------------------------------------------- plan output
@@ -628,6 +789,7 @@ STATE_MARK = {
     UNLINKED: "! unlinked",
     UNTARGETED: "+ untargeted",
     FOREIGN: "> foreign",
+    MIGRATE: "> migrate",
 }
 
 
@@ -1134,7 +1296,7 @@ def main():
     if in_scope("skills"):
         skill_items, canonical_skills = plan_skills(home, skill_targets)
     if in_scope("instructions"):
-        instr_items = plan_instructions(instr_targets, home)
+        instr_items = plan_instructions(instr_targets, home, profile, default_source)
 
     if args.plan and args.json:
         emit_json_plan(
@@ -1174,16 +1336,16 @@ def main():
         (instr_targets, {}, {}, [])
     if instr_drift:
         new_instr_targets, source_updates, instr_resolutions, instr_skipped = \
-            reconcile_instructions(instr_items, instr_targets, default_source,
-                                   secret_map, read_only)
+            reconcile_instructions(instr_items, instr_targets, secret_map, read_only)
 
     # ---- effect preview (recomputed rows, including promote ripple)
     # out-of-scope MCPs must stay exactly live: never regenerate
     final = final_mcp_state(genmod, new_servers, env, live_all, resolutions, mcp_items) \
         if in_scope("mcps") else live_all
-    instr_ops = final_instructions(
-        instr_items, new_instr_targets, source_updates, instr_resolutions, home) \
-        if in_scope("instructions") else []
+    instr_ops, instr_removals = final_instructions(
+        instr_items, new_instr_targets, source_updates, instr_resolutions, home,
+        profile, default_source) \
+        if in_scope("instructions") else ([], [])
     print("\nEFFECT PREVIEW")
     any_change = False
     for client in MCP_CLIENTS:
@@ -1218,6 +1380,9 @@ def main():
     for provider, path, content in instr_ops:
         any_change = True
         print(f"  instructions rewrite: {provider} ({path})")
+    for provider, legacy in instr_removals:
+        any_change = True
+        print(f"  instructions migrate: {provider} — back up and remove {legacy}")
     if new_instr_targets != instr_targets:
         any_change = True
         print("  Instructions/instructions.yaml: targeting updated")
@@ -1259,9 +1424,12 @@ def main():
         backup(path, INSTRUCTIONS_ROOT, stamp)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
+    for provider, legacy in instr_removals:
+        backup(legacy, INSTRUCTIONS_ROOT, stamp)
+        legacy.unlink()
     if new_instr_targets != instr_targets:
         backup(INSTRUCTIONS_MANIFEST, INSTRUCTIONS_ROOT, stamp)
-        write_instruction_targets(new_instr_targets, default_source)
+        write_instruction_targets(new_instr_targets)
 
     print("\nSUMMARY")
     if norm(new_servers) != norm(servers):
@@ -1275,6 +1443,8 @@ def main():
         print("  canonical: Instructions/instructions.yaml updated")
     for provider, path, content in instr_ops:
         print(f"  instructions rewrite: {provider} ({path})")
+    for provider, legacy in instr_removals:
+        print(f"  instructions migrated: {provider} — removed {legacy}")
     if changed_clients:
         print(f"  providers rewritten: {', '.join(changed_clients)}")
     for action, name, agent in applied_skills:

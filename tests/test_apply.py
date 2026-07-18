@@ -152,30 +152,108 @@ class SkillPlanTest(ApplyTestCase):
         self.assertEqual(items["demo"]["claude-code"]["state"], A.MISSING)
 
 
+BASE = "# Base\n\nShared rules.\n"
+EXTRA = "# Claude extras\n\nModel table.\n"
+
+
 class InstructionsPlanTest(ApplyTestCase):
+    PROFILE = {"name": "test", "fragments": ["base.md"]}
+
     def setUp(self):
         super().setUp()
         self.instr = self.tmp / "Instructions"
-        self.instr.mkdir()
-        (self.instr / "AGENTS.md").write_text("# Base\n")
+        (self.instr / "fragments").mkdir(parents=True)
+        (self.instr / "providers").mkdir()
+        (self.instr / "fragments" / "base.md").write_text(BASE)
+        (self.instr / "providers" / "claude-code.md").write_text(EXTRA)
         self.apply.INSTRUCTIONS_ROOT = self.instr
 
     def targets(self):
         return {
-            "codex": {"path": "~/.codex/AGENTS.md", "source": "AGENTS.md"},
-            "cursor": {"path": "~/AGENTS.md", "source": "AGENTS.md"},
+            "claude-code": {"path": "~/.claude/CLAUDE.md", "legacy": "~/CLAUDE.md",
+                            "extra": "providers/claude-code.md"},
+            "codex": {"path": "~/.codex/AGENTS.md"},
         }
+
+    def plan(self, targets=None):
+        return self.apply.plan_instructions(
+            targets or self.targets(), self.home, self.PROFILE, None)
+
+    def rendered(self, *relpaths):
+        return self.apply.render_instruction(list(relpaths))[0]
+
+    def test_render_is_fragment_concatenation(self):
+        self.assertEqual(self.rendered("fragments/base.md"), BASE)
+        self.assertEqual(
+            self.rendered("fragments/base.md", "providers/claude-code.md"),
+            BASE.rstrip("\n") + "\n\n" + EXTRA)
 
     def test_states(self):
         A = self.apply
-        self.write(".codex/AGENTS.md", "# Base\n")          # in sync
-        items = self.apply.plan_instructions(self.targets(), self.home)
+        self.write(".codex/AGENTS.md", self.rendered("fragments/base.md"))
+        items = self.plan()
         self.assertEqual(items["codex"]["state"], A.IN_SYNC)
-        self.assertEqual(items["cursor"]["state"], A.MISSING)
+        self.assertEqual(items["claude-code"]["state"], A.MISSING)
 
-        self.write("AGENTS.md", "# Base\nedited\n")
-        items = self.apply.plan_instructions(self.targets(), self.home)
-        self.assertEqual(items["cursor"]["state"], A.MODIFIED)
+        self.write(".claude/CLAUDE.md", "# Base\nedited\n")
+        items = self.plan()
+        self.assertEqual(items["claude-code"]["state"], A.MODIFIED)
+
+    def test_legacy_path_migration(self):
+        A = self.apply
+        desired = self.rendered("fragments/base.md", "providers/claude-code.md")
+        # only the legacy file exists, content already right -> migrate
+        self.write("CLAUDE.md", desired)
+        items = self.plan()
+        cell = items["claude-code"]
+        self.assertEqual(cell["state"], A.MIGRATE)
+        self.assertEqual(cell["legacy"], self.home / "CLAUDE.md")
+
+        writes, removals = self.apply.final_instructions(
+            items, self.targets(), {}, {"claude-code": "sync"},
+            self.home, self.PROFILE, None)
+        self.assertIn(("claude-code", self.home / ".claude/CLAUDE.md", desired),
+                      writes)
+        self.assertEqual(removals, [("claude-code", self.home / "CLAUDE.md")])
+
+    def test_v1_manifest_still_renders_whole_source(self):
+        A = self.apply
+        (self.instr / "AGENTS.md").write_text("# V1\n")
+        targets = {"codex": {"path": "~/.codex/AGENTS.md", "source": "AGENTS.md"}}
+        items = self.apply.plan_instructions(targets, self.home, self.PROFILE,
+                                             "AGENTS.md")
+        self.assertEqual(items["codex"]["state"], A.MISSING)
+        self.assertEqual(items["codex"]["desired"], "# V1\n")
+
+    def test_promote_maps_hunks_to_fragments(self):
+        desired, spans = self.apply.render_instruction(
+            ["fragments/base.md", "providers/claude-code.md"])
+        live = desired.replace("Shared rules.", "Sharper shared rules.") \
+                      .replace("Model table.", "Better model table.")
+        edits, boundary, blocked = self.apply.map_hunks_to_sources(
+            desired.splitlines(), live.splitlines(), spans)
+        self.assertFalse(boundary)
+        self.assertFalse(blocked)
+        self.assertEqual(sorted(edits),
+                         ["fragments/base.md", "providers/claude-code.md"])
+
+        overrides = {}
+        for relpath, source_edits in edits.items():
+            self.apply.apply_source_edits(relpath, source_edits, overrides)
+        self.assertIn("Sharper shared rules.", overrides["fragments/base.md"])
+        self.assertIn("Better model table.", overrides["providers/claude-code.md"])
+        # promote ripple: re-render equals the live edit
+        rerendered, _ = self.apply.render_instruction(
+            ["fragments/base.md", "providers/claude-code.md"], overrides)
+        self.assertEqual(rerendered, live)
+
+    def test_boundary_spanning_edit_blocks_promote(self):
+        desired, spans = self.apply.render_instruction(
+            ["fragments/base.md", "providers/claude-code.md"])
+        live = desired.replace("Shared rules.\n\n# Claude extras", "Merged section")
+        _, _, blocked = self.apply.map_hunks_to_sources(
+            desired.splitlines(), live.splitlines(), spans)
+        self.assertTrue(blocked)
 
 
 class YamlSubsetTest(ApplyTestCase):
