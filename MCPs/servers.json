@@ -3,6 +3,7 @@
   "servers": {
     "browser-tools": {
       "clients": ["cursor"],
+      "requires": {"executables": ["npx"]},
       "config": {
         "command": "npx",
         "args": ["-y", "@agentdeskai/browser-tools-mcp@1.2.0"]
@@ -10,21 +11,28 @@
     },
     "Figma": {
       "clients": ["cursor"],
+      "platforms": ["darwin"],
+      "setup": "Figma desktop app with the local MCP server enabled",
       "config": {
         "url": "http://127.0.0.1:3845/mcp"
       }
     },
     "db-mcp": {
       "clients": ["cursor", "claude-code", "claude-desktop", "codex"],
+      "security": "reads shared databases via profiles",
+      "requires": {"paths": ["${CODE_ROOT}/Personal/DB-MCP/.venv/bin/db-mcp"]},
+      "setup": "clone DB-MCP under <code root>/Personal and create its .venv",
       "config": {
         "type": "stdio",
-        "command": "/Users/satyasaibhushan/Code/Personal/DB-MCP/.venv/bin/db-mcp",
+        "command": "${CODE_ROOT}/Personal/DB-MCP/.venv/bin/db-mcp",
         "args": [],
         "env": {}
       }
     },
     "new-relic": {
       "clients": ["cursor", "claude-code", "claude-desktop", "codex"],
+      "security": "external service, sends queries to New Relic",
+      "requires": {"env": ["NEW_RELIC_API_KEY"]},
       "config": {
         "type": "http",
         "url": "https://mcp.newrelic.com/mcp/",
@@ -55,13 +63,19 @@
     },
     "jira-attachments": {
       "clients": ["cursor", "claude-code", "claude-desktop", "codex"],
+      "security": "reads Jira, downloads attachments locally",
+      "requires": {
+        "executables": ["python3"],
+        "paths": ["${CODE_ROOT}/Personal/jira-attachment-downloader/mcp_server.py"]
+      },
+      "setup": "clone jira-attachment-downloader under <code root>/Personal",
       "config": {
-        "command": "/opt/homebrew/opt/python@3.13/bin/python3.13",
+        "command": "python3",
         "args": [
-          "/Users/satyasaibhushan/Code/Personal/jira-attachment-downloader/mcp_server.py"
+          "${CODE_ROOT}/Personal/jira-attachment-downloader/mcp_server.py"
         ],
         "env": {
-          "JIRA_AGENT_MCP_ENV": "/Users/satyasaibhushan/Agents/Config/MCPs/.env.local"
+          "JIRA_AGENT_MCP_ENV": "${HOME}/.config/agents-config/mcp.env"
         }
       },
       "codex": {
@@ -70,15 +84,19 @@
     },
     "gmail": {
       "clients": ["claude-code", "claude-desktop"],
+      "security": "reads personal Gmail",
+      "requires": {"paths": ["${HOME}/.local/bin/gmail-mcp"]},
+      "setup": "install gmail-mcp into ~/.local/bin and complete its OAuth flow",
       "config": {
         "type": "stdio",
-        "command": "/Users/satyasaibhushan/.local/bin/gmail-mcp",
+        "command": "${HOME}/.local/bin/gmail-mcp",
         "args": [],
         "env": {}
       }
     },
     "sqrl": {
       "clients": ["codex", "claude-desktop"],
+      "requires": {"executables": ["sqrl"]},
       "config": {
         "command": "sqrl",
         "args": ["serve", "--project", "UAT"]
@@ -86,11 +104,17 @@
     },
     "devdock": {
       "clients": ["claude-code", "codex", "claude-desktop"],
+      "security": "controls local dev containers (read-write scope)",
+      "requires": {
+        "executables": ["node"],
+        "paths": ["${CODE_ROOT}/Personal/devdock/packages/mcp/dist/index.js"]
+      },
+      "setup": "clone devdock under <code root>/Personal and build packages/mcp",
       "config": {
         "type": "stdio",
         "command": "node",
         "args": [
-          "/Users/satyasaibhushan/Code/Personal/devdock/packages/mcp/dist/index.js"
+          "${CODE_ROOT}/Personal/devdock/packages/mcp/dist/index.js"
         ],
         "env": {
           "DEVDOCK_MCP_SCOPE": "rw"

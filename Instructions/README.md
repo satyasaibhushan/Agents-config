@@ -1,55 +1,66 @@
 # Shared Agent Instructions
 
-Canonical instructions files, distributed to every agent by the reconciling apply.
+Canonical instructions, distributed to every agent by the reconciling apply.
 
 ```text
-AGENTS.md           The shared default source every provider renders from
+fragments/          Ordered building blocks (base.md, devbox.md, restricted-agent.md)
+providers/          Per-provider extras and full divergences
 instructions.yaml   Which live file belongs to which provider
-<provider>.md       Created only when a provider diverges (keep during apply)
 ```
 
-## Mapping
+## Rendering
 
-`instructions.yaml` maps provider → live file:
+Each provider's live file is the concatenation of the **active profile's
+fragments** (in `profiles.yaml` order) plus the provider's optional `extra`
+fragment. So `mac-admin` renders `base.md` alone, while `devbox-agent` renders
+`base.md` + `devbox.md` + `restricted-agent.md` — same canonical content, one
+render per machine shape.
+
+`instructions.yaml` (version 2) maps provider → live file:
 
 ```yaml
-version: 1
-default_source: AGENTS.md
+version: 2
 targets:
   claude-code:
-    path: ~/CLAUDE.md
+    path: ~/.claude/CLAUDE.md
+    legacy: ~/CLAUDE.md              # old live path; apply migrates it
+    extra: providers/claude-code.md  # appended after the profile fragments
   codex:
     path: ~/.codex/AGENTS.md
   cursor:
-    path: ~/AGENTS.md        # generic AGENTS.md convention; anything under ~ reads it
+    path: ~/AGENTS.md                # generic AGENTS.md convention
 ```
 
-`source` is optional per target and relative to this folder — all providers share
-`default_source` until one diverges. Point a provider at its own file
-(`source: codex.md`) to give it different instructions; the apply's **keep** verb
-does exactly this for you when it finds a provider-local edit worth preserving.
+- `extra` — a provider-only fragment appended after the shared ones.
+- `source` — full divergence: the provider renders exactly that one file and
+  ignores fragments (the apply's **keep** verb sets this for you).
+- `legacy` — an old live path. When it still exists, plan shows `migrate` and
+  apply writes `path`, then backs up and removes the legacy file so the rules
+  never load twice.
 
 ## Apply
 
 ```bash
-python3 ~/Agents/Config/scripts/apply.py --only instructions          # interactive
-python3 ~/Agents/Config/scripts/apply.py --plan --only instructions   # read-only
+agents-config apply --only instructions    # interactive
+agents-config plan --only instructions     # read-only
 ```
 
-States per provider: `in sync` / `modified` (live differs from its source, shown as a
-unified diff) / `missing`. Identical edits across providers on the same source are one
-decision. Verbs mirror MCPs:
+States per provider: `in sync` / `modified` (live differs from the render,
+shown as a unified diff) / `missing` / `migrate`. Identical edits across
+providers rendering the same sources are one decision. Verbs:
 
-- **promote** — the live edit becomes the source file's content, rippling to every
-  provider on that source
-- **keep** — diverge: the edit is stored as `Instructions/<provider>.md` and the
-  provider's `source` is pointed at it
-- **overwrite** — regenerate the live file from its source
-- **skip** — leave both, re-ask next apply
+- **promote** — each live diff hunk is mapped back to the fragment it falls in
+  and folded into that source file, rippling to every provider that renders it.
+  Insertions exactly on a fragment boundary ask which side they belong to;
+  a hunk that rewrites lines *across* a boundary blocks promote (split the
+  edit, or diverge).
+- **keep** — diverge: the whole live file is stored as
+  `providers/<provider>.md` and the provider's `source` is pointed at it.
+- **overwrite** — regenerate the live file from canonical.
+- **skip** — leave both, re-ask next apply.
 
-A missing live file offers overwrite (write it) or keep (stop targeting the provider —
-removes it from `instructions.yaml`). Zero writes before confirm; replaced live files
-are backed up under `Instructions/backups/<timestamp>/`.
+Zero writes before confirm; replaced live files are backed up under
+`~/.local/state/agents-config/backups/<timestamp>/`.
 
-To onboard a new provider, add a `targets:` entry by hand — the next apply will show
-it as `missing` and offer to write it.
+To onboard a new provider, add a `targets:` entry by hand — the next apply
+shows it as `missing` and offers to write it.

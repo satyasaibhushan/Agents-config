@@ -43,17 +43,21 @@ def load_env():
     each agent gets a literal key instead of an unexpanded ${VAR}."""
     env = {}
     path = env_path()
-    if path is None:
-        return env
-    if path.stat().st_mode & 0o077:
-        os.chmod(path, 0o600)
-        print(f"note: tightened {path} to 0600", file=sys.stderr)
-    for raw in path.read_text().splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        env[key.strip()] = value.strip().strip('"').strip("'")
+    if path is not None:
+        if path.stat().st_mode & 0o077:
+            os.chmod(path, 0o600)
+            print(f"note: tightened {path} to 0600", file=sys.stderr)
+        for raw in path.read_text().splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            env[key.strip()] = value.strip().strip('"').strip("'")
+    # Path variables for portable server definitions. Standalone generation
+    # assumes the default layout; apply.py overrides both from the profile.
+    env.setdefault("HOME", str(Path.home()))
+    env.setdefault("CODE_ROOT", os.environ.get("CODE_ROOT",
+                                               str(Path.home() / "Code")))
     return env
 
 

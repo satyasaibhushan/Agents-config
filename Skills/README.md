@@ -51,7 +51,7 @@ Reconcile decisions rewrite the manifest on confirm; an entry that returns to al
 The apply script backs up replaced symlinks under:
 
 ```text
-~/Agents/Config/Skills/backups/<timestamp>/
+~/.local/state/agents-config/backups/<timestamp>/
 ```
 
 ## Add Or Update A Skill

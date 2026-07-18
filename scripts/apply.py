@@ -244,7 +244,7 @@ def partition_servers(genmod, servers, profile, platform, env):
         platforms = entry.get("platforms")
         allowed_profiles = entry.get("profiles")
         if platforms and platform not in platforms:
-            out[name] = f"{platform}-only exclusion (platforms: {', '.join(platforms)})"
+            out[name] = f"not for {platform} (platforms: {', '.join(platforms)})"
         elif allowed_profiles is not None and profile["name"] not in allowed_profiles:
             out[name] = f"not enabled for profile {profile['name']}"
         elif allowed_profiles is None and profile.get("mcps") == "default-deny":
