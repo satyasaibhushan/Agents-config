@@ -356,6 +356,88 @@ class ProfileTest(ApplyTestCase):
         self.assertEqual(self.apply.effective_mode({"mode": "read-only"}), "read-only")
 
 
+class McpScopeTest(ApplyTestCase):
+    ADMIN = {"name": "mac-admin", "mcps": "default-allow", "code_root": "~/Code"}
+    AGENT = {"name": "devbox-agent", "mcps": "default-deny",
+             "code_root": "/srv/code"}
+
+    def partition(self, servers, profile, platform="darwin", env=None):
+        return self.apply.partition_servers(
+            self.genmod, servers, profile, platform, env or {})
+
+    def test_validation_rejects_unknown_keys_and_hardcoded_paths(self):
+        for entry in (
+            {"clients": ["codex"], "confg": {}},                    # typo key
+            {"clients": ["emacs"]},                                  # bad client
+            {"clients": ["codex"], "platforms": ["windows"]},        # bad platform
+            {"clients": ["codex"], "profiles": ["nope"]},            # bad profile
+            {"clients": ["codex"], "requires": {"binaries": []}},    # bad requires
+            {"clients": ["codex"],
+             "config": {"command": "/Users/me/bin/tool"}},           # hardcoded
+            {"clients": ["codex"],
+             "codex": {"args": ["/opt/homebrew/bin/x"]}},            # in override
+        ):
+            with self.assertRaises(SystemExit):
+                self.apply.validate_servers({"bad": entry}, {"mac-admin": {}})
+        self.apply.validate_servers({"ok": {
+            "clients": ["codex"], "platforms": ["darwin"],
+            "profiles": ["mac-admin"], "security": "reads-code",
+            "requires": {"executables": ["python3"]},
+            "config": {"command": "${HOME}/bin/tool",
+                       "args": ["${CODE_ROOT}/repo"]},
+        }}, {"mac-admin": {}})
+
+    def test_platform_and_profile_filtering(self):
+        servers = {
+            "everywhere": {"clients": ["codex"], "config": {"command": "x"}},
+            "mac-only": {"clients": ["codex"], "platforms": ["darwin"],
+                         "config": {"command": "x"}},
+            "agent-ok": {"clients": ["codex"], "profiles": ["devbox-agent"],
+                         "config": {"command": "x"}},
+        }
+        in_scope, out = self.partition(servers, self.ADMIN, "darwin")
+        self.assertEqual(sorted(in_scope), ["everywhere", "mac-only"])
+        self.assertIn("not enabled for profile mac-admin", out["agent-ok"])
+
+        in_scope, out = self.partition(servers, self.AGENT, "linux")
+        self.assertEqual(sorted(in_scope), ["agent-ok"])   # explicit allow-list
+        self.assertIn("denies MCPs by default", out["everywhere"])
+        self.assertIn("darwin", out["mac-only"])
+
+    def test_requires_filtering(self):
+        servers = {"needs": {"clients": ["codex"], "config": {"command": "x"},
+                             "requires": {"executables": ["no-such-binary-xyz"]}}}
+        _, out = self.partition(servers, self.ADMIN)
+        self.assertIn("executable 'no-such-binary-xyz'", out["needs"])
+
+    def test_path_vars_expand_and_reverse_substitute(self):
+        env = self.apply.path_vars({}, self.home, self.ADMIN)
+        self.assertEqual(env["HOME"], str(self.home))
+        self.assertEqual(env["CODE_ROOT"], str(self.home / "Code"))
+
+        entry = {"clients": ["codex"],
+                 "config": {"command": "${HOME}/bin/tool",
+                            "args": ["${CODE_ROOT}/repo"]}}
+        desired = self.apply.desired_mcp(self.genmod, "t", entry, "codex", env)
+        self.assertEqual(desired["command"], f"{self.home}/bin/tool")
+        self.assertEqual(desired["args"], [f"{self.home}/Code/repo"])
+
+        # promote path: literal paths reverse to portable placeholders,
+        # ${CODE_ROOT} winning over its ${HOME} prefix
+        secret_map = self.apply.build_secret_map(env)
+        masked = self.apply.reverse_substitute(desired, secret_map)
+        self.assertEqual(masked["command"], "${HOME}/bin/tool")
+        self.assertEqual(masked["args"], ["${CODE_ROOT}/repo"])
+
+    def test_plan_ignores_out_of_scope_live_entries(self):
+        self.write_json(".claude.json", {"mcpServers": {
+            "mac-only": {"command": "x"},
+        }})
+        items, _ = self.apply.plan_mcps(self.genmod, {}, {}, self.home,
+                                        ignore={"mac-only"})
+        self.assertNotIn("mac-only", items)
+
+
 class StateDirTest(ApplyTestCase):
     def test_backup_lands_in_home_state_dir(self):
         target = self.write(".claude/CLAUDE.md", "live\n")

@@ -127,10 +127,11 @@ def mcp_config_paths(home):
 # ---------------------------------------------------------------- secrets
 
 def build_secret_map(env):
-    """value -> ${VAR}, for masking output and reverse-substituting imports."""
+    """value -> ${VAR}, for masking output and reverse-substituting imports.
+    Longest values first so ${CODE_ROOT} wins over its ${HOME} prefix."""
     return {
         value: "${%s}" % name
-        for name, value in env.items()
+        for name, value in sorted(env.items(), key=lambda kv: -len(kv[1]))
         if value and len(value) >= 6
     }
 
@@ -186,7 +187,85 @@ def norm(value):
     return json.dumps(value, sort_keys=True)
 
 
-def plan_mcps(genmod, servers, env, home):
+# ---------------------------------------------------------------- MCP scope
+
+SERVER_KEYS = {"clients", "config", "platforms", "profiles", "requires",
+               "security", "setup"}
+REQUIRES_KEYS = {"executables", "env", "paths"}
+HARDCODED_PATHS = ("/Users/", "/home/", "/opt/homebrew")
+
+
+def path_vars(env, home, profile):
+    """Overlay ${HOME}/${CODE_ROOT} onto the secrets env. They ride the same
+    substitution pipeline forward (rendering) and the same reverse map back
+    (promote writes ${HOME}, never a literal /Users/... path)."""
+    env = dict(env)
+    env["HOME"] = str(home)
+    code_root = profile.get("code_root", "~/Code")
+    env["CODE_ROOT"] = str(home / code_root[2:]) \
+        if code_root.startswith("~/") else code_root
+    return env
+
+
+def validate_servers(servers, profiles):
+    """Hard stop on schema violations: a bad servers.json must never
+    half-apply on some machine and silently no-op on another."""
+    errors = []
+    allowed = SERVER_KEYS | set(MCP_CLIENTS)
+    for name, entry in servers.items():
+        errors += [f"{name}: unknown key {key!r}" for key in entry
+                   if key not in allowed]
+        errors += [f"{name}: unknown client {c!r}"
+                   for c in entry.get("clients", []) if c not in MCP_CLIENTS]
+        errors += [f"{name}: unknown platform {p!r}"
+                   for p in entry.get("platforms", [])
+                   if p not in ("darwin", "linux")]
+        errors += [f"{name}: unknown profile {p!r}"
+                   for p in entry.get("profiles", []) if p not in profiles]
+        errors += [f"{name}: requires: unknown key {key!r}"
+                   for key in entry.get("requires", {})
+                   if key not in REQUIRES_KEYS]
+        blob = json.dumps([entry.get("config"),
+                           *(entry.get(c) for c in MCP_CLIENTS)])
+        errors += [f"{name}: hardcoded path ({prefix}...) — use "
+                   "${HOME} or ${CODE_ROOT}"
+                   for prefix in HARDCODED_PATHS if prefix in blob]
+    if errors:
+        sys.exit("error: MCPs/servers.json failed validation:\n  "
+                 + "\n  ".join(errors))
+
+
+def partition_servers(genmod, servers, profile, platform, env):
+    """-> (in_scope, out_of_scope {name: reason}). Out-of-scope servers are
+    invisible to plan and apply: their live entries are left exactly as found,
+    never flagged as strays, never regenerated."""
+    in_scope, out = {}, {}
+    for name, entry in servers.items():
+        platforms = entry.get("platforms")
+        allowed_profiles = entry.get("profiles")
+        if platforms and platform not in platforms:
+            out[name] = f"{platform}-only exclusion (platforms: {', '.join(platforms)})"
+        elif allowed_profiles is not None and profile["name"] not in allowed_profiles:
+            out[name] = f"not enabled for profile {profile['name']}"
+        elif allowed_profiles is None and profile.get("mcps") == "default-deny":
+            out[name] = f"profile {profile['name']} denies MCPs by default"
+        else:
+            requires = entry.get("requires", {})
+            missing = [f"executable {exe!r}"
+                       for exe in requires.get("executables", [])
+                       if not shutil.which(exe)]
+            missing += [f"env var {var}" for var in requires.get("env", [])
+                        if not (env.get(var) or os.environ.get(var))]
+            missing += [f"path {p}" for p in requires.get("paths", [])
+                        if not Path(genmod.substitute(p, env)).exists()]
+            if missing:
+                out[name] = "missing " + ", ".join(missing)
+            else:
+                in_scope[name] = entry
+    return in_scope, out
+
+
+def plan_mcps(genmod, servers, env, home, ignore=frozenset()):
     """-> {name: {client: cell}} where cell = {state, live, desired}."""
     paths = mcp_config_paths(home)
     live_all = {client: read_live_mcps(client, path) for client, path in paths.items()}
@@ -195,6 +274,7 @@ def plan_mcps(genmod, servers, env, home):
     names = set(servers)
     for live in live_all.values():
         names |= set(live)
+    names -= set(ignore)
 
     for name in sorted(names, key=str.lower):
         entry = servers.get(name)
@@ -1276,7 +1356,8 @@ def main():
     args = parse_args()
     in_scope = lambda section: args.only in (None, section)
 
-    profile = resolve_profile(args, load_profiles())
+    profiles = load_profiles()
+    profile = resolve_profile(args, profiles)
     run_preflight(profile)
     read_only = effective_mode(profile) == "read-only"
     if not args.plan:
@@ -1284,9 +1365,12 @@ def main():
 
     genmod = load_genmod()
     servers = genmod.load_servers()
-    env = genmod.load_env()
-    secret_map = build_secret_map(env)
     home = args.home
+    env = path_vars(genmod.load_env(), home, profile)
+    secret_map = build_secret_map(env)
+    validate_servers(servers, profiles)
+    servers_in_scope, out_of_scope = partition_servers(
+        genmod, servers, profile, args.platform, env)
 
     skill_targets = load_skill_targets()
     instr_targets, default_source = load_instruction_targets()
@@ -1295,7 +1379,16 @@ def main():
     skill_items, canonical_skills = ({}, {})
     instr_items = {}
     if in_scope("mcps"):
-        mcp_items, live_all = plan_mcps(genmod, servers, env, home)
+        mcp_items, live_all = plan_mcps(genmod, servers_in_scope, env, home,
+                                        ignore=out_of_scope)
+        if genmod.MISSING_PLACEHOLDERS:
+            names = ", ".join(sorted(genmod.MISSING_PLACEHOLDERS))
+            message = (f"unresolved placeholder(s): {names} — add them to "
+                       "~/.config/agents-config/mcp.env")
+            if args.plan:
+                print("warning: " + message, file=sys.stderr)
+            else:
+                sys.exit("error: " + message)
     if in_scope("skills"):
         skill_items, canonical_skills = plan_skills(home, skill_targets)
     if in_scope("instructions"):
@@ -1313,6 +1406,9 @@ def main():
           f"{'read-only' if read_only else 'read-write'})")
     mcp_drift = print_matrix("MCP DRIFT PLAN", mcp_items, MCP_CLIENTS) \
         if in_scope("mcps") else {}
+    if in_scope("mcps") and out_of_scope:
+        for name in sorted(out_of_scope, key=str.lower):
+            print(f"  out of scope: {name} — {out_of_scope[name]}")
     skill_drift = print_matrix("SKILL DRIFT PLAN", skill_items, list(SKILL_AGENTS)) \
         if in_scope("skills") else {}
     instr_drift = print_instructions_plan(instr_items) \
@@ -1343,7 +1439,10 @@ def main():
 
     # ---- effect preview (recomputed rows, including promote ripple)
     # out-of-scope MCPs must stay exactly live: never regenerate
-    final = final_mcp_state(genmod, new_servers, env, live_all, resolutions, mcp_items) \
+    final = final_mcp_state(
+        genmod,
+        {n: e for n, e in new_servers.items() if n not in out_of_scope},
+        env, live_all, resolutions, mcp_items) \
         if in_scope("mcps") else live_all
     instr_ops, instr_removals = final_instructions(
         instr_items, new_instr_targets, source_updates, instr_resolutions, home,
