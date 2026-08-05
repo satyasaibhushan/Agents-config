@@ -30,6 +30,29 @@
         "env": {}
       }
     },
+    "elasticsearch": {
+      "clients": ["cursor", "claude-code", "claude-desktop", "codex"],
+      "security": "policy-enforced Elasticsearch access via named profiles",
+      "requires": {
+        "executables": ["uv"],
+        "paths": [
+          "${CODE_ROOT}/Personal/ES-MCP/pyproject.toml",
+          "${HOME}/.es-access/profiles.yaml"
+        ]
+      },
+      "setup": "clone ES-MCP under <code root>/Personal, run uv sync, and configure ~/.es-access",
+      "config": {
+        "type": "stdio",
+        "command": "uv",
+        "args": [
+          "--directory",
+          "${CODE_ROOT}/Personal/ES-MCP",
+          "run",
+          "es-mcp"
+        ],
+        "env": {}
+      }
+    },
     "new-relic": {
       "clients": ["cursor", "claude-code", "claude-desktop", "codex"],
       "profiles": ["mac-admin", "devbox-admin", "devbox-agent"],
