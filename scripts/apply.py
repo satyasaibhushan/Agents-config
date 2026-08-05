@@ -93,8 +93,6 @@ MCP_IGNORE = {
     "codex": {"node_repl", "computer-use", "openaiDeveloperDocs"},
 }
 
-CODEX_KEYS = {"args", "command", "enabled", "env", "startup_timeout_sec"}
-
 IN_SYNC = "in sync"
 ADDED = "added"
 MODIFIED = "modified"
@@ -174,10 +172,7 @@ def desired_mcp(genmod, name, entry, client, env):
     if client not in entry.get("clients", []):
         return None
     if client == "codex":
-        config = dict(entry.get("config", {}))
-        config.update(entry.get("codex", {}))
-        config = genmod.substitute(config, env)
-        config = {k: v for k, v in config.items() if k in CODEX_KEYS}
+        config = genmod.codex_server_config(entry, env)
         if not config.get("env"):
             config.pop("env", None)  # TOML generation omits empty env tables
         return config
@@ -1264,7 +1259,9 @@ def codex_toml_section(final_codex, genmod):
         "",
     ]
     for name in sorted(final_codex, key=str.lower):
-        config = {k: v for k, v in final_codex[name].items() if k in CODEX_KEYS}
+        # final_codex includes app-managed servers that must round-trip without
+        # losing transport-defining fields such as `url`.
+        config = dict(final_codex[name])
         env = config.pop("env", None)
         table = name if name.replace("_", "").replace("-", "").isalnum() else json.dumps(name)
         lines.append(f"[mcp_servers.{table}]")

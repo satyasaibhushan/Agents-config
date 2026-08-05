@@ -114,6 +114,58 @@ class McpPlanTest(ApplyTestCase):
         parsed = tomllib.loads(text)["mcp_servers"]["alpha"]
         self.assertEqual(parsed, final["alpha"])
 
+    def test_codex_command_override_replaces_base_http_transport(self):
+        entry = {
+            "clients": ["codex"],
+            "config": {
+                "type": "http",
+                "url": "https://example.com/mcp",
+                "headers": {"api-key": "secret"},
+            },
+            "codex": {"command": "proxy", "args": ["https://example.com/mcp"]},
+        }
+
+        desired = self.apply.desired_mcp(
+            self.genmod, "remote", entry, "codex", {}
+        )
+
+        self.assertEqual(
+            desired,
+            {"command": "proxy", "args": ["https://example.com/mcp"]},
+        )
+
+    def test_codex_write_preserves_app_managed_http_transport(self):
+        path = self.write(
+            ".codex/config.toml",
+            'model = "gpt-5"\n\n'
+            '[mcp_servers.openaiDeveloperDocs]\n'
+            'url = "https://developers.openai.com/mcp"\n'
+            'http_headers = { "X-Client" = "codex" }\n',
+        )
+        live = {client: {} for client in self.apply.MCP_CLIENTS}
+        live["codex"] = self.apply.read_live_mcps("codex", path)
+        final = {client: dict(servers) for client, servers in live.items()}
+        final["codex"]["elasticsearch"] = {
+            "command": "uv",
+            "args": ["--directory", "/code/ES-MCP", "run", "es-mcp"],
+        }
+
+        changed = self.apply.write_mcp_configs(
+            final, live, self.home, self.genmod, "20260806-000001"
+        )
+
+        parsed = tomllib.loads(path.read_text())["mcp_servers"]
+        self.assertEqual(changed, ["codex"])
+        self.assertEqual(
+            parsed["openaiDeveloperDocs"]["url"],
+            "https://developers.openai.com/mcp",
+        )
+        self.assertEqual(
+            parsed["openaiDeveloperDocs"]["http_headers"],
+            {"X-Client": "codex"},
+        )
+        self.assertEqual(parsed["elasticsearch"]["command"], "uv")
+
 
 class SkillPlanTest(ApplyTestCase):
     def setUp(self):

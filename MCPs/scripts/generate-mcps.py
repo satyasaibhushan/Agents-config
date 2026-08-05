@@ -20,6 +20,18 @@ PLACEHOLDER_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 # warn the operator without ever printing the resolved (secret) values.
 MISSING_PLACEHOLDERS = set()
 
+CODEX_SHARED_KEYS = {
+    "default_tools_approval_mode", "disabled_tools", "enabled", "enabled_tools",
+    "oauth_resource", "required", "scopes", "startup_timeout_ms",
+    "startup_timeout_sec", "tool_timeout_sec", "tools",
+}
+CODEX_STDIO_KEYS = {
+    "args", "command", "cwd", "env", "env_vars", "experimental_environment",
+}
+CODEX_HTTP_KEYS = {
+    "auth", "bearer_token_env_var", "env_http_headers", "http_headers", "url",
+}
+
 
 def load_servers():
     with SERVERS_PATH.open() as f:
@@ -136,7 +148,29 @@ def toml_value(value):
         return str(value)
     if isinstance(value, list):
         return "[" + ", ".join(toml_value(item) for item in value) + "]"
+    if isinstance(value, dict):
+        items = (
+            f"{toml_quote(str(key))} = {toml_value(item)}"
+            for key, item in sorted(value.items())
+        )
+        return "{ " + ", ".join(items) + " }"
     return toml_quote(value)
+
+
+def codex_server_config(entry, env):
+    """Render one Codex MCP entry with exactly one transport."""
+    config = dict(entry.get("config", {}))
+    override = entry.get("codex", {})
+    config.update(override)
+    config = substitute(config, env)
+
+    if "command" in override or ("url" not in override and "command" in config):
+        allowed = CODEX_SHARED_KEYS | CODEX_STDIO_KEYS
+    elif "url" in override or "url" in config:
+        allowed = CODEX_SHARED_KEYS | CODEX_HTTP_KEYS
+    else:
+        allowed = CODEX_SHARED_KEYS
+    return {key: value for key, value in config.items() if key in allowed}
 
 
 def codex_config(servers, env):
@@ -150,14 +184,7 @@ def codex_config(servers, env):
         if "codex" not in entry.get("clients", []):
             continue
 
-        config = dict(entry.get("config", {}))
-        config.update(entry.get("codex", {}))
-        config = substitute(config, env)
-        config = {
-            key: value
-            for key, value in config.items()
-            if key in {"args", "command", "enabled", "env", "startup_timeout_sec"}
-        }
+        config = codex_server_config(entry, env)
         server_env = config.pop("env", None)
 
         table_name = name if name.replace("_", "").replace("-", "").isalnum() else json.dumps(name)
