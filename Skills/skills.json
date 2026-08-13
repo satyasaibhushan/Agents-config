@@ -28,6 +28,7 @@
     "pdf": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
     "request-refactor-plan": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
     "setup-matt-pocock-skills": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
+    "slate": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
     "tdd": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
     "to-issues": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
     "to-prd": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
