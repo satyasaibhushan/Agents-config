@@ -27,6 +27,7 @@ globally — never commit them or reference them in team-visible files.
 ## Code Style
 - Always strive for concise, simple solutions.
 - If a problem can be solved in a simpler way, propose it.
+- If you need a paragraph-long comment to justify why the workaround is OK, the code is wrong — fix the code.
 
 ## General preferences
 - If asked to do too much work at once, stop and state that clearly.
