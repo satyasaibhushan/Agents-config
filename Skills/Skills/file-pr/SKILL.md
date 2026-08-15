@@ -1,15 +1,25 @@
 ---
 name: file-pr
-description: File a concise pull request. Use when the user asks to file, open, raise, or create a PR. "uat PR" or "PR to uat" means the UAT flow.
+description: Commit the work and file a concise pull request. Use when the user asks to file, open, raise, or create a PR. "uat PR" or "PR to uat" means the UAT flow.
 ---
 
 # File PR
 
-File the PR for work already done on the current branch. This skill is about
-filing well, not writing code: if the change isn't finished, say so and stop.
+Commit the work on the current branch and file the PR for it. This skill is
+about committing and filing well, not writing code: if the change isn't
+finished, say so and stop.
 
 Two flavours: a normal PR into the primary branch (default), and a UAT PR
 (only when the user says uat).
+
+## Commit
+
+- Commit whatever uncommitted work belongs to the task. If the diff contains
+  changes that look unrelated to the task, stop and ask; never sweep them in.
+- Commit messages are short imperative English describing observable
+  behaviour, no trailing period, no Conventional Commits. Ticket work starts
+  with the key (`SULF-1234: ...`).
+- If everything is already committed, skip straight to filing.
 
 ## Before filing
 
