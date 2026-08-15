@@ -1,6 +1,7 @@
 {
   "version": 1,
   "skills": {
+    "babysit-pr": {"profiles": ["mac-admin", "devbox-admin"]},
     "codex-computer-use": {
       "clients": ["claude-code"],
       "profiles": ["mac-admin"]
@@ -16,6 +17,7 @@
     "design-an-interface": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
     "diagnose": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
     "fastapi": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
+    "file-pr": {"profiles": ["mac-admin", "devbox-admin"]},
     "fastapi-python": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
     "find-skills": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
     "frontend-design": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
