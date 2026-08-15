@@ -27,13 +27,7 @@
     "new-relic-log-search": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
     "pdf": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
     "request-refactor-plan": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
-    "setup-matt-pocock-skills": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
     "slate": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
-    "tdd": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
-    "to-issues": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
-    "to-prd": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
-    "triage": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
-    "triage-issue": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
     "ubiquitous-language": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
     "zoom-out": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]}
   }

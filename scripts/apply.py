@@ -99,9 +99,10 @@ MODIFIED = "modified"
 MISSING = "missing"
 UNLINKED = "unlinked"
 UNTARGETED = "untargeted"  # in canonical, provider not targeted, but present live
+ORPHANED = "orphaned"      # canonical skill removed, provider link still present
 FOREIGN = "foreign"        # symlink pointing somewhere non-canonical
 MIGRATE = "migrate"        # content in sync, but a legacy path still loads
-DRIFT_STATES = {ADDED, MODIFIED, MISSING, UNLINKED, UNTARGETED, MIGRATE}
+DRIFT_STATES = {ADDED, MODIFIED, MISSING, UNLINKED, UNTARGETED, ORPHANED, MIGRATE}
 
 
 def load_genmod():
@@ -417,9 +418,13 @@ def plan_skills(home, targets, profile):
 
 def classify_skill(target, canonical_path):
     if target.is_symlink():
-        dest = target.resolve() if target.exists() else Path(target.readlink())
+        link = target.readlink()
+        dest = link if link.is_absolute() else target.parent / link
+        dest = dest.resolve()
         if canonical_path and dest == canonical_path.resolve():
             return {"state": IN_SYNC}
+        if not canonical_path and dest.parent == CANONICAL_SKILLS.resolve():
+            return {"state": ORPHANED, "dest": str(dest), "path": str(target)}
         return {"state": FOREIGN, "dest": str(dest)}
     if target.is_dir():
         if canonical_path:
@@ -910,6 +915,7 @@ STATE_MARK = {
     MISSING: "x missing",
     UNLINKED: "! unlinked",
     UNTARGETED: "+ untargeted",
+    ORPHANED: "- orphaned",
     FOREIGN: "> foreign",
     MIGRATE: "> migrate",
 }
@@ -1138,6 +1144,21 @@ def reconcile_skills(items, canonical, targets, home, profile, read_only=False):
                                     Path(added[agent]["path"])))
                 else:
                     skipped.append((name, agents, ADDED))
+
+        orphaned = [a for a, c in cells.items() if c["state"] == ORPHANED]
+        if orphaned:
+            show_header()
+            print(f"  canonical skill removed; linked in {', '.join(orphaned)}")
+            choice = ask("", filter_choices({
+                "o": "overwrite — remove links from those agent(s) (backed up)",
+                "s": "skip",
+            }, read_only))
+            if choice == "o":
+                for agent in orphaned:
+                    ops.append(("remove", name, agent, None,
+                                home / SKILL_AGENTS[agent] / name))
+            else:
+                skipped.append((name, orphaned, ORPHANED))
 
         missing = [a for a, c in cells.items() if c["state"] == MISSING]
         if missing and name in canonical:

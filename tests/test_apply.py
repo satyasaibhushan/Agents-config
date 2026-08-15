@@ -193,6 +193,10 @@ class SkillPlanTest(ApplyTestCase):
         extra.mkdir()
         (extra / "SKILL.md").write_text("extra\n")
 
+        orphaned = self.home / ".agents/skills/removed"     # deleted canonical skill
+        orphaned.parent.mkdir(parents=True)
+        orphaned.symlink_to(self.canonical / "removed")
+
         profile = {"name": "test", "skills": "default-allow"}
         items, canonical = self.apply.plan_skills(self.home, {}, profile)
         self.assertIn("demo", canonical)
@@ -203,6 +207,7 @@ class SkillPlanTest(ApplyTestCase):
         self.assertEqual(demo["cursor"]["state"], A.FOREIGN)
         self.assertEqual(demo["agents"]["state"], A.MISSING)
         self.assertEqual(items["extra"]["claude-code"]["state"], A.ADDED)
+        self.assertEqual(items["removed"]["agents"]["state"], A.ORPHANED)
 
     def test_untargeted_skill(self):
         A = self.apply
