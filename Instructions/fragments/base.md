@@ -32,6 +32,8 @@ globally — never commit them or reference them in team-visible files.
 ## General preferences
 - If asked to do too much work at once, stop and state that clearly.
 - If computer use is helpful for completing or verifying work, shell out to gpt-5.5 with Codex for it
+- When proactively creating a simple artifact without a user-requested format or
+  delivery surface, prefer creating and publishing it as a Slate HTML draft.
 
 # Git Workflow
 
