@@ -14,9 +14,12 @@
       "clients": ["claude-code"],
       "profiles": ["mac-admin", "devbox-admin", "devbox-agent"]
     },
-    "design-an-interface": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
-    "diagnose": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
+    "codebase-design": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
+    "diagnosing-bugs": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
+    "domain-modeling": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
     "fastapi": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
+    "grilling": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
+    "handoff": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
     "file-pr": {"profiles": ["mac-admin", "devbox-admin"]},
     "fastapi-python": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
     "find-skills": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
@@ -30,7 +33,10 @@
     "pdf": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
     "request-refactor-plan": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
     "slate": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
-    "ubiquitous-language": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
+    "teach": {"profiles": ["mac-admin", "devbox-admin"]},
+    "wait-what": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
+    "wayfinder": {"profiles": ["mac-admin", "devbox-admin"]},
+    "wizard": {"profiles": ["mac-admin", "devbox-admin"]},
     "zoom-out": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]}
   }
 }
