@@ -22,6 +22,12 @@ Match the user's project name against discovered `service`, `app`, or `entity.na
 
 For production logs, inspect env values for the matched services first. Treat production as `env LIKE 'prod%'` unless discovery shows a different convention.
 
+Search every replica and revision relevant to the window. Absence from one worker's log stream is not absence, and queue depth zero does not prove completion. Facet by task, container, host, or revision fields when they are available.
+
+Before proposing a code or provider-endpoint change, extract the exact exception class, HTTP status, message, and provider response. Keep missing evidence explicit instead of inferring it from a wrapper exception.
+
+For CMC production shell access, use the established Copilot/ECS workflow. Do not suggest Kubernetes unless the user explicitly identifies Kubernetes.
+
 For error logs, use this filter:
 
 ```sql

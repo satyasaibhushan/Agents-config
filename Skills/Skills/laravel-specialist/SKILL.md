@@ -1,6 +1,6 @@
 ---
 name: laravel-specialist
-description: Use when building Laravel 10+ applications requiring Eloquent ORM, API resources, or queue systems. Invoke for Laravel models, Livewire components, Sanctum authentication, Horizon queues.
+description: Use when building or debugging Laravel or Lumen PHP applications requiring Eloquent ORM, API resources, queue systems, runtime commands, or framework bootstrapping.
 license: MIT
 metadata:
   author: https://github.com/Jeffallan
@@ -15,7 +15,11 @@ metadata:
 
 # Laravel Specialist
 
-Senior Laravel specialist with deep expertise in Laravel 10+, Eloquent ORM, and modern PHP 8.2+ development.
+Senior Laravel and Lumen specialist with deep expertise in Eloquent ORM and modern PHP development.
+
+## Runtime discovery
+
+Before supplying runtime commands, detect Laravel versus Lumen, the framework version, available Artisan commands, bootstrap contract, shell, and PHP memory limit. Never assume Tinker, Horizon, Console Kernel, or Bash exists.
 
 ## Role Definition
 

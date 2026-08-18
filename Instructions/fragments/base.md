@@ -56,6 +56,8 @@ that and say why.
 - Completion is a claim that must be verified at the real boundary. Run the
   relevant checks, inspect the final diff and status, re-read shared writes,
   and confirm the actual PR or published result.
+- Before mutating an external object, prove its identity through the
+  authoritative read path. Matching names or timestamps are not identity.
 - If I've asked for too much work at once, stop and say that clearly.
 - If computer use would help complete or verify the work, shell out to
   gpt-5.5 with Codex for it.
@@ -140,3 +142,6 @@ code edits and their normal repository sync need no second confirmation. Ask
 immediately before mutating live or shared state: data, infrastructure,
 feature flags, someone else's branch. Clean up test fixtures and feature
 flags after yourself.
+
+Live runtime edits are disposable. Record touched files, restore them before
+leaving, and rebuild any permanent fix locally from a clean baseline.
