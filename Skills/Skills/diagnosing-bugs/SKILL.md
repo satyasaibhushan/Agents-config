@@ -9,6 +9,17 @@ A discipline for hard bugs. Skip phases only when explicitly justified.
 
 When exploring the codebase, read `CONTEXT.md` (if it exists) to get a clear mental model of the relevant modules, and check ADRs in the area you're touching.
 
+## Production incidents
+
+Do not reproduce a destructive production failure merely to obtain a red test. Establish two read-only signals instead:
+
+1. **Coverage ledger:** expected, succeeded, failed, and unknown targets, split by worker and code revision when relevant.
+2. **Correctness oracle:** the authoritative external state that proves recovery. Queue depth, process health, and one worker's logs are not completion evidence.
+
+Canary one target before scaling. Isolate targets when one crash can terminate the batch, and continue after per-target failures. Before mutating an external object, prove its stable identity and parent relationship; matching names or timestamps is insufficient.
+
+When the user can only paste commands into a live shell, inspect the exact source first. Prefer transparent, idempotent replacements that assert one expected match, then run syntax validation. Do not send opaque encoded patches.
+
 ## Redact
 
 This skill has you show commands, outputs and captured artifacts. **Redact every secret first** — write `<REDACTED>` in its place. Build loops against env vars, so the credential stays in the environment rather than in what you show. Captured artifacts carry auth headers: quote only the lines that carry the signal.
@@ -95,7 +106,7 @@ Each hypothesis must be **falsifiable**: state the prediction it makes.
 
 If you cannot state the prediction, the hypothesis is a vibe — discard or sharpen it.
 
-**Show the ranked list to the user before testing.** They often have domain knowledge that re-ranks instantly ("we just deployed a change to #3"), or know hypotheses they've already ruled out. Cheap checkpoint, big time saver. Don't block on it — proceed with your ranking if the user is AFK.
+Keep the ranked list internal unless user knowledge could materially re-rank it or testing requires their authority. In that case, ask one concise question and continue every unaffected check.
 
 ## Phase 4 — Instrument
 
