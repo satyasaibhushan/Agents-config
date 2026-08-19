@@ -22,6 +22,8 @@ that and say why.
 
 ## Communication
 
+- When reporting information to me, be extremely concise and sacrifice grammar
+  for the sake of concision.
 - Lead with the answer. Give me only the evidence and status needed to trust
   it (test result, diff, PR URL), then stop. No preamble, process diary, or
   unused options.
