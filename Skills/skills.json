@@ -2,6 +2,7 @@
   "version": 1,
   "skills": {
     "babysit-pr": {"profiles": ["mac-admin", "devbox-admin"]},
+    "blast-radius": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
     "codex-computer-use": {
       "clients": ["claude-code"],
       "profiles": ["mac-admin"]
@@ -33,7 +34,9 @@
     "pdf": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
     "request-refactor-plan": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
     "slate": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
+    "show-me-your-work": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
     "teach": {"profiles": ["mac-admin", "devbox-admin"]},
+    "unslop": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
     "wait-what": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
     "wayfinder": {"profiles": ["mac-admin", "devbox-admin"]},
     "wizard": {"profiles": ["mac-admin", "devbox-admin"]},

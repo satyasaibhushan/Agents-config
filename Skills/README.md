@@ -25,7 +25,13 @@ python3 ~/Agents/Config/scripts/apply.py --plan --only skills   # read-only drif
 
 Beyond linking, it detects drift: skills that exist live but not in canon can be imported (**keep**) or removed (**overwrite**); a symlink someone replaced with an edited real folder can have its edits imported into canon and relinked, or be reverted. See the root README for the full model.
 
-Both intentionally create symlinks for individual skills only. Do not replace an entire agent-managed skills directory with one symlink.
+Agents, Claude Code, and Cursor link each skill directly to the canonical
+folder. Codex links each skill to a generated view under
+`~/.local/state/agents-config/generated/codex/skills/`. The generated view
+keeps the canonical files and translates provider metadata, such as
+`disable-model-invocation: true`, into Codex's `agents/openai.yaml` policy. It
+also drops unsupported presentation metadata such as `argument-hint`.
+Do not replace an entire agent-managed skills directory with one symlink.
 
 ## Per-Skill Client Targeting
 
@@ -78,7 +84,7 @@ python3 ~/Agents/Config/Skills/scripts/generate-skill-from-github.py \
   https://github.com/<owner>/<repo>/tree/<ref>/<path/to/skill>
 ```
 
-Then apply the symlinks:
+Then apply the skill links and generated Codex views:
 
 ```bash
 python3 ~/Agents/Config/scripts/apply.py --only skills

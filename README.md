@@ -81,9 +81,10 @@ executable/path/secret) are reported with the reason and left exactly as found.
 
 ## Skills
 
-`Skills/Skills/<skill-name>/SKILL.md` is the canonical layout; per-agent skill
-folders point at it with per-skill symlinks. A sparse `Skills/skills.json`
-targets skills at specific agents; see `Skills/README.md`.
+`Skills/Skills/<skill-name>/SKILL.md` is the canonical layout. Agents, Claude
+Code, and Cursor point at it with per-skill symlinks. Codex points at a
+generated per-skill view that translates provider-specific metadata. A sparse
+`Skills/skills.json` targets skills at specific agents; see `Skills/README.md`.
 
 ## MCPs
 

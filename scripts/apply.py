@@ -63,6 +63,7 @@ import json
 import os
 import shutil
 import sys
+import tempfile
 import tomllib
 from datetime import datetime
 from pathlib import Path
@@ -88,6 +89,10 @@ SKILL_AGENTS = {
 SKILL_IGNORE = {
     "codex": {"codex-primary-runtime"},
 }
+CODEX_SKILL_FRONTMATTER_KEYS = {
+    "allowed-tools", "description", "license", "metadata", "name",
+}
+CODEX_DROPPED_SKILL_FRONTMATTER_KEYS = {"argument-hint"}
 # Agent-managed MCP servers (installed by the app itself, not by us).
 MCP_IGNORE = {
     "codex": {"node_repl", "computer-use", "openaiDeveloperDocs"},
@@ -360,14 +365,166 @@ def write_skill_targets(targets):
     SKILLS_MANIFEST.write_text(json.dumps(manifest, indent=2) + "\n")
 
 
-def dir_digest(path):
+def dir_digest(path, overrides=None):
+    overrides = overrides or {}
     digest = hashlib.sha256()
-    for file in sorted(p for p in Path(path).rglob("*") if p.is_file()):
-        if file.name == ".DS_Store":
-            continue
-        digest.update(str(file.relative_to(path)).encode())
-        digest.update(file.read_bytes())
+    files = {
+        file.relative_to(path): file
+        for file in Path(path).rglob("*")
+        if file.is_file() and file.name != ".DS_Store"
+    }
+    for relpath in sorted(set(files) | set(overrides), key=str):
+        file = files.get(relpath)
+        digest.update(str(relpath).encode())
+        digest.update(overrides.get(relpath, file.read_bytes() if file else b""))
     return digest.hexdigest()
+
+
+def codex_skill_overrides(canonical_path):
+    """Return Codex-only file content without changing the canonical skill.
+
+    Cursor's disable-model-invocation frontmatter has the same meaning as
+    Codex's agents/openai.yaml policy.allow_implicit_invocation setting.
+    """
+    skill_path = canonical_path / "SKILL.md"
+    if not skill_path.is_file():
+        return {}
+
+    lines = skill_path.read_text().splitlines(keepends=True)
+    if not lines or lines[0].strip() != "---":
+        return {}
+    frontmatter_end = next(
+        (index for index, line in enumerate(lines[1:], 1) if line.strip() == "---"),
+        None,
+    )
+    if frontmatter_end is None:
+        return {}
+
+    explicit_only = False
+    transformed = []
+    for index, line in enumerate(lines):
+        if 0 < index < frontmatter_end and not line[:1].isspace():
+            key, separator, raw_value = line.partition(":")
+            if separator and key == "disable-model-invocation":
+                value = raw_value.split(" #", 1)[0].strip().strip("'\"").lower()
+                if value not in {"true", "false"}:
+                    sys.exit(
+                        f"error: {skill_path}: disable-model-invocation must be true or false"
+                    )
+                explicit_only = value == "true"
+                continue
+            if separator and key in CODEX_DROPPED_SKILL_FRONTMATTER_KEYS:
+                continue
+            if separator and key not in CODEX_SKILL_FRONTMATTER_KEYS:
+                sys.exit(f"error: {skill_path}: no Codex transform for frontmatter key {key}")
+        transformed.append(line)
+
+    overrides = {Path("SKILL.md"): "".join(transformed).encode()}
+    if explicit_only:
+        openai_rel = Path("agents/openai.yaml")
+        openai_path = canonical_path / openai_rel
+        existing = openai_path.read_text() if openai_path.is_file() else ""
+        overrides[openai_rel] = codex_disable_implicit_invocation(existing).encode()
+    return overrides
+
+
+def codex_disable_implicit_invocation(content):
+    lines = content.splitlines(keepends=True)
+    policy_start = None
+    policy_end = len(lines)
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if line == line.lstrip() and stripped:
+            key, separator, raw_value = stripped.partition(":")
+            if separator and key == "policy":
+                value = raw_value.split(" #", 1)[0].strip()
+                if value == "{}":
+                    lines[index] = "policy:\n"
+                elif value:
+                    sys.exit("error: agents/openai.yaml: inline policy must be empty")
+                policy_start = index
+                continue
+        if (policy_start is not None and index > policy_start
+                and line == line.lstrip() and stripped and not stripped.startswith("#")):
+            policy_end = index
+            break
+
+    if policy_start is None:
+        if content and not content.endswith("\n"):
+            content += "\n"
+        if content:
+            content += "\n"
+        return content + "policy:\n  allow_implicit_invocation: false\n"
+
+    direct_indents = [
+        len(line) - len(line.lstrip())
+        for line in lines[policy_start + 1:policy_end]
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    direct_indent = min(direct_indents, default=2)
+    for index in range(policy_start + 1, policy_end):
+        indent_size = len(lines[index]) - len(lines[index].lstrip())
+        if (indent_size == direct_indent
+                and lines[index].lstrip().startswith("allow_implicit_invocation:")):
+            indent = lines[index][:indent_size]
+            lines[index] = f"{indent}allow_implicit_invocation: false\n"
+            return "".join(lines)
+
+    lines.insert(policy_start + 1, "  allow_implicit_invocation: false\n")
+    return "".join(lines)
+
+
+def codex_skill_digest(canonical_path):
+    return dir_digest(canonical_path, codex_skill_overrides(canonical_path))
+
+
+def detach_staged_override_path(staged_root, canonical_root, relpath):
+    staged_parent = staged_root
+    canonical_parent = canonical_root
+    for part in relpath.parent.parts:
+        staged_parent /= part
+        canonical_parent /= part
+        if staged_parent.is_symlink():
+            staged_parent.unlink()
+            shutil.copytree(
+                canonical_parent,
+                staged_parent,
+                symlinks=True,
+                ignore=shutil.ignore_patterns(".DS_Store"),
+            )
+    path = staged_root / relpath
+    if path.is_symlink():
+        path.unlink()
+    return path
+
+
+def write_codex_skill_view(canonical_path, generated_path, home, stamp):
+    overrides = codex_skill_overrides(canonical_path)
+    expected_digest = dir_digest(canonical_path, overrides)
+    if generated_path.is_dir() and dir_digest(generated_path) == expected_digest:
+        return False
+
+    private_mkdir(generated_path.parent)
+    with tempfile.TemporaryDirectory(dir=generated_path.parent) as tmp:
+        staged = Path(tmp) / generated_path.name
+        shutil.copytree(
+            canonical_path,
+            staged,
+            symlinks=True,
+            ignore=shutil.ignore_patterns(".DS_Store"),
+        )
+        for relpath, content in overrides.items():
+            path = detach_staged_override_path(staged, canonical_path, relpath)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(content)
+        if generated_path.exists() or generated_path.is_symlink():
+            backup(generated_path, home, stamp)
+            if generated_path.is_dir() and not generated_path.is_symlink():
+                shutil.rmtree(generated_path)
+            else:
+                generated_path.unlink()
+        staged.replace(generated_path)
+    return True
 
 
 def plan_skills(home, targets, profile):
@@ -392,7 +549,7 @@ def plan_skills(home, targets, profile):
                 seen.add(name)
                 if name in canonical and not skill_clients(name, targets, profile):
                     continue  # out of scope: leave the live entry untouched
-                cell = classify_skill(target, canonical.get(name))
+                cell = classify_skill(target, canonical.get(name), agent, home)
                 if cell is None:
                     continue
                 if (name in canonical and cell["state"] != FOREIGN
@@ -416,19 +573,34 @@ def plan_skills(home, targets, profile):
     }, canonical
 
 
-def classify_skill(target, canonical_path):
+def classify_skill(target, canonical_path, agent=None, home=None):
     if target.is_symlink():
         link = target.readlink()
         dest = link if link.is_absolute() else target.parent / link
         dest = dest.resolve()
-        if canonical_path and dest == canonical_path.resolve():
-            return {"state": IN_SYNC}
+        if canonical_path:
+            if agent == "codex":
+                generated = codex_generated_skills_dir(home) / canonical_path.name
+                if dest == generated.resolve():
+                    if (generated.is_dir()
+                            and dir_digest(generated) == codex_skill_digest(canonical_path)):
+                        return {"state": IN_SYNC}
+                    return {"state": MODIFIED, "path": str(target)}
+                if dest == canonical_path.resolve():
+                    return {"state": MIGRATE, "path": str(target)}
+            elif dest == canonical_path.resolve():
+                return {"state": IN_SYNC}
         if not canonical_path and dest.parent == CANONICAL_SKILLS.resolve():
+            return {"state": ORPHANED, "dest": str(dest), "path": str(target)}
+        if (not canonical_path and agent == "codex" and home is not None
+                and dest.parent == codex_generated_skills_dir(home).resolve()):
             return {"state": ORPHANED, "dest": str(dest), "path": str(target)}
         return {"state": FOREIGN, "dest": str(dest)}
     if target.is_dir():
         if canonical_path:
-            identical = dir_digest(target) == dir_digest(canonical_path)
+            desired_digest = (codex_skill_digest(canonical_path)
+                              if agent == "codex" else dir_digest(canonical_path))
+            identical = dir_digest(target) == desired_digest
             return {"state": UNLINKED, "identical": identical, "path": str(target)}
         return {"state": ADDED, "path": str(target), "digest": dir_digest(target)}
     return None  # stray file; not a skill
@@ -477,6 +649,10 @@ def config_dir(home):
 
 def state_dir(home):
     return home / ".local" / "state" / "agents-config"
+
+
+def codex_generated_skills_dir(home):
+    return state_dir(home) / "generated" / "codex" / "skills"
 
 
 def load_local_config(home):
@@ -1179,13 +1355,49 @@ def reconcile_skills(items, canonical, targets, home, profile, read_only=False):
                 skipped.append((name, missing, MISSING))
 
         for agent, cell in cells.items():
-            if cell["state"] == UNLINKED:
+            if cell["state"] == MIGRATE and agent == "codex":
+                show_header()
+                print("  codex points at the shared skill; it needs a generated Codex view")
+                choice = ask("", filter_choices({
+                    "o": "overwrite — generate the Codex view and relink",
+                    "s": "skip",
+                }, read_only))
+                if choice == "o":
+                    ops.append(("link", name, agent, CANONICAL_SKILLS / name,
+                                home / SKILL_AGENTS[agent] / name))
+                else:
+                    skipped.append((name, [agent], MIGRATE))
+            elif cell["state"] == MODIFIED and agent == "codex":
+                show_header()
+                print("  generated Codex view differs from canonical")
+                choice = ask("", filter_choices({
+                    "o": "overwrite — regenerate the Codex view",
+                    "s": "skip",
+                }, read_only))
+                if choice == "o":
+                    ops.append(("link", name, agent, CANONICAL_SKILLS / name,
+                                home / SKILL_AGENTS[agent] / name))
+                else:
+                    skipped.append((name, [agent], MODIFIED))
+            elif cell["state"] == UNLINKED:
                 show_header()
                 target = home / SKILL_AGENTS[agent] / name
                 if cell["identical"]:
-                    print(f"  unlinked in {agent} (content identical to canonical)")
+                    comparison = "the generated view" if agent == "codex" else "canonical"
+                    link_target = "generated view" if agent == "codex" else "canonical symlink"
+                    print(f"  unlinked in {agent} (content identical to {comparison})")
                     choice = ask("", filter_choices({
-                        "o": "overwrite — replace the copy with the canonical symlink",
+                        "o": f"overwrite — replace the copy with the {link_target}",
+                        "s": "skip",
+                    }, read_only))
+                    if choice == "o":
+                        ops.append(("link", name, agent, CANONICAL_SKILLS / name, target))
+                    else:
+                        skipped.append((name, [agent], UNLINKED))
+                elif agent == "codex":
+                    print("  unlinked in codex and content DIFFERS from the generated view")
+                    choice = ask("", filter_choices({
+                        "o": "overwrite — discard the local edits and regenerate (backed up)",
                         "s": "skip",
                     }, read_only))
                     if choice == "o":
@@ -1215,8 +1427,11 @@ def reconcile_skills(items, canonical, targets, home, profile, read_only=False):
                 print(f"  present in {agent} ({detail}), but canonical does not target it")
                 keep_label = "keep — target this agent in Skills/skills.json"
                 if cell["kind"] == "dir":
-                    keep_label += (", relink the copy" if cell["identical"] else
-                                   "; edits go into canonical (ALL agents), then relink")
+                    if agent == "codex":
+                        keep_label += ", replace it with the generated Codex view"
+                    else:
+                        keep_label += (", relink the copy" if cell["identical"] else
+                                       "; edits go into canonical (ALL agents), then relink")
                 choice = ask("", filter_choices({
                     "k": keep_label,
                     "o": "overwrite — remove it from the agent (backed up)",
@@ -1225,7 +1440,7 @@ def reconcile_skills(items, canonical, targets, home, profile, read_only=False):
                 if choice == "k":
                     set_clients(name, clients_of(name) + [agent])
                     if cell["kind"] == "dir":
-                        if not cell["identical"]:
+                        if not cell["identical"] and agent != "codex":
                             ops.append(("import", name, None, target,
                                         CANONICAL_SKILLS / name))
                         ops.append(("link", name, agent, CANONICAL_SKILLS / name, target))
@@ -1350,7 +1565,14 @@ def apply_skill_ops(ops, home, stamp):
             shutil.copytree(src, dest, symlinks=True,
                             ignore=shutil.ignore_patterns(".DS_Store"))
         elif action == "link":
-            if dest.is_symlink() and dest.resolve() == src.resolve():
+            link_src = src
+            generated_changed = False
+            if agent == "codex":
+                link_src = codex_generated_skills_dir(home) / name
+                generated_changed = write_codex_skill_view(src, link_src, home, stamp)
+            if dest.is_symlink() and dest.resolve() == link_src.resolve():
+                if generated_changed:
+                    applied.append((action, name, agent))
                 continue
             if dest.exists() or dest.is_symlink():
                 backup(dest, home, stamp)
@@ -1359,13 +1581,21 @@ def apply_skill_ops(ops, home, stamp):
                 else:
                     dest.unlink()
             dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.symlink_to(src)
+            dest.symlink_to(link_src)
         elif action == "remove":
             backup(dest, home, stamp)
             if dest.is_dir() and not dest.is_symlink():
                 shutil.rmtree(dest)
             else:
                 dest.unlink()
+            if agent == "codex":
+                generated = codex_generated_skills_dir(home) / name
+                if generated.exists() or generated.is_symlink():
+                    backup(generated, home, stamp)
+                    if generated.is_dir() and not generated.is_symlink():
+                        shutil.rmtree(generated)
+                    else:
+                        generated.unlink()
         applied.append((action, name, agent))
     return applied
 

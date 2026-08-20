@@ -209,6 +209,237 @@ class SkillPlanTest(ApplyTestCase):
         self.assertEqual(items["extra"]["claude-code"]["state"], A.ADDED)
         self.assertEqual(items["removed"]["agents"]["state"], A.ORPHANED)
 
+    def test_codex_canonical_link_needs_generated_view_migration(self):
+        link = self.home / ".codex/skills/demo"
+        link.parent.mkdir(parents=True)
+        link.symlink_to(self.canonical / "demo")
+
+        targets = {"demo": {"clients": ["codex"]}}
+        items, _ = self.apply.plan_skills(
+            self.home, targets, {"name": "test", "skills": "default-allow"}
+        )
+
+        self.assertEqual(items["demo"]["codex"]["state"], self.apply.MIGRATE)
+
+    def test_codex_generated_view_translates_explicit_invocation_policy(self):
+        skill = self.canonical / "demo"
+        (skill / "SKILL.md").write_text(
+            "---\n"
+            "name: demo\n"
+            "description: Demo skill.\n"
+            "disable-model-invocation: true\n"
+            "argument-hint: A value\n"
+            "---\n\n"
+            "# Demo\n"
+        )
+        script = skill / "scripts/run.sh"
+        script.parent.mkdir()
+        script.write_text("#!/bin/sh\n")
+        script.chmod(0o755)
+        target = self.home / ".codex/skills/demo"
+
+        applied = self.apply.apply_skill_ops([
+            ("link", "demo", "codex", skill, target),
+        ], self.home, "20260820-000001")
+
+        generated = self.apply.codex_generated_skills_dir(self.home) / "demo"
+        self.assertEqual(applied, [("link", "demo", "codex")])
+        self.assertTrue(target.is_symlink())
+        self.assertEqual(target.resolve(), generated.resolve())
+        self.assertNotEqual(target.resolve(), skill.resolve())
+        self.assertNotIn("disable-model-invocation", (generated / "SKILL.md").read_text())
+        self.assertNotIn("argument-hint", (generated / "SKILL.md").read_text())
+        self.assertIn(
+            "allow_implicit_invocation: false",
+            (generated / "agents/openai.yaml").read_text(),
+        )
+        self.assertIn("disable-model-invocation", (skill / "SKILL.md").read_text())
+        self.assertTrue((generated / "scripts/run.sh").stat().st_mode & 0o100)
+
+        targets = {"demo": {"clients": ["codex"]}}
+        profile = {"name": "test", "skills": "default-allow"}
+        items, _ = self.apply.plan_skills(self.home, targets, profile)
+        self.assertNotIn("demo", items)
+
+        (skill / "SKILL.md").write_text(
+            (skill / "SKILL.md").read_text() + "\nChanged.\n"
+        )
+        items, _ = self.apply.plan_skills(self.home, targets, profile)
+        self.assertEqual(items["demo"]["codex"]["state"], self.apply.MODIFIED)
+
+        applied = self.apply.apply_skill_ops([
+            ("link", "demo", "codex", skill, target),
+        ], self.home, "20260820-000002")
+        self.assertEqual(applied, [("link", "demo", "codex")])
+        self.assertIn("Changed.", (generated / "SKILL.md").read_text())
+        items, _ = self.apply.plan_skills(self.home, targets, profile)
+        self.assertNotIn("demo", items)
+
+    def test_codex_false_invocation_flag_is_removed_without_policy(self):
+        skill = self.canonical / "demo"
+        (skill / "SKILL.md").write_text(
+            "---\n"
+            "name: demo\n"
+            "description: Demo skill.\n"
+            "disable-model-invocation: false\n"
+            "---\n"
+        )
+
+        overrides = self.apply.codex_skill_overrides(skill)
+
+        self.assertNotIn(
+            "disable-model-invocation",
+            overrides[Path("SKILL.md")].decode(),
+        )
+        self.assertNotIn(Path("agents/openai.yaml"), overrides)
+
+    def test_codex_invalid_invocation_flag_stops_generation(self):
+        skill = self.canonical / "demo"
+        (skill / "SKILL.md").write_text(
+            "---\n"
+            "name: demo\n"
+            "description: Demo skill.\n"
+            "disable-model-invocation: maybe\n"
+            "---\n"
+        )
+
+        with self.assertRaises(SystemExit):
+            self.apply.codex_skill_overrides(skill)
+
+    def test_codex_unknown_frontmatter_stops_generation(self):
+        skill = self.canonical / "demo"
+        (skill / "SKILL.md").write_text(
+            "---\n"
+            "name: demo\n"
+            "description: Demo skill.\n"
+            "unknown-provider-field: value\n"
+            "---\n"
+        )
+
+        with self.assertRaises(SystemExit):
+            self.apply.codex_skill_overrides(skill)
+
+    def test_codex_remove_deletes_link_and_generated_view(self):
+        skill = self.canonical / "demo"
+        target = self.home / ".codex/skills/demo"
+        self.apply.apply_skill_ops([
+            ("link", "demo", "codex", skill, target),
+        ], self.home, "20260820-000001")
+        generated = self.apply.codex_generated_skills_dir(self.home) / "demo"
+
+        applied = self.apply.apply_skill_ops([
+            ("remove", "demo", "codex", None, target),
+        ], self.home, "20260820-000002")
+
+        self.assertEqual(applied, [("remove", "demo", "codex")])
+        self.assertFalse(target.exists())
+        self.assertFalse(target.is_symlink())
+        self.assertFalse(generated.exists())
+
+    def test_codex_policy_merge_preserves_existing_interface(self):
+        content = (
+            "interface:\n"
+            "  display_name: \"Demo\"\n\n"
+            "policy:\n"
+            "  allow_implicit_invocation: true\n"
+        )
+
+        transformed = self.apply.codex_disable_implicit_invocation(content)
+
+        self.assertIn('display_name: "Demo"', transformed)
+        self.assertIn("allow_implicit_invocation: false", transformed)
+        self.assertNotIn("allow_implicit_invocation: true", transformed)
+
+    def test_codex_empty_inline_policy_becomes_one_policy_block(self):
+        transformed = self.apply.codex_disable_implicit_invocation("policy: {}\n")
+
+        self.assertEqual(
+            transformed,
+            "policy:\n  allow_implicit_invocation: false\n",
+        )
+
+    def test_codex_nonempty_inline_policy_stops_generation(self):
+        with self.assertRaises(SystemExit):
+            self.apply.codex_disable_implicit_invocation(
+                "policy: {allow_implicit_invocation: true}\n"
+            )
+
+    def test_codex_generation_does_not_write_through_metadata_symlinks(self):
+        skill = self.canonical / "demo"
+        external_skill = self.tmp / "external-SKILL.md"
+        external_skill.write_text(
+            "---\n"
+            "name: demo\n"
+            "description: Demo skill.\n"
+            "disable-model-invocation: true\n"
+            "---\n"
+        )
+        (skill / "SKILL.md").unlink()
+        (skill / "SKILL.md").symlink_to(external_skill)
+        external_openai = self.tmp / "external-openai.yaml"
+        external_openai.write_text(
+            "interface:\n"
+            "  display_name: \"Demo\"\n\n"
+            "policy: {}\n"
+        )
+        (skill / "agents").mkdir()
+        (skill / "agents/openai.yaml").symlink_to(external_openai)
+        external_script = self.tmp / "external-run.sh"
+        external_script.write_text("#!/bin/sh\n")
+        (skill / "scripts").mkdir()
+        (skill / "scripts/run.sh").symlink_to(external_script)
+        original_skill = external_skill.read_text()
+        original_openai = external_openai.read_text()
+        target = self.home / ".codex/skills/demo"
+
+        self.apply.apply_skill_ops([
+            ("link", "demo", "codex", skill, target),
+        ], self.home, "20260820-000001")
+
+        generated = self.apply.codex_generated_skills_dir(self.home) / "demo"
+        self.assertEqual(external_skill.read_text(), original_skill)
+        self.assertEqual(external_openai.read_text(), original_openai)
+        self.assertFalse((generated / "SKILL.md").is_symlink())
+        self.assertFalse((generated / "agents/openai.yaml").is_symlink())
+        self.assertTrue((generated / "scripts/run.sh").is_symlink())
+        self.assertNotIn(
+            "disable-model-invocation",
+            (generated / "SKILL.md").read_text(),
+        )
+        self.assertEqual(
+            (generated / "agents/openai.yaml").read_text().count("policy:"),
+            1,
+        )
+
+    def test_codex_generation_detaches_symlinked_metadata_parent(self):
+        skill = self.canonical / "demo"
+        (skill / "SKILL.md").write_text(
+            "---\n"
+            "name: demo\n"
+            "description: Demo skill.\n"
+            "disable-model-invocation: true\n"
+            "---\n"
+        )
+        external_agents = self.tmp / "external-agents"
+        external_agents.mkdir()
+        external_openai = external_agents / "openai.yaml"
+        external_openai.write_text("policy: {}\n")
+        (skill / "agents").symlink_to(external_agents)
+        original_openai = external_openai.read_text()
+        target = self.home / ".codex/skills/demo"
+
+        self.apply.apply_skill_ops([
+            ("link", "demo", "codex", skill, target),
+        ], self.home, "20260820-000001")
+
+        generated = self.apply.codex_generated_skills_dir(self.home) / "demo"
+        self.assertEqual(external_openai.read_text(), original_openai)
+        self.assertFalse((generated / "agents").is_symlink())
+        self.assertEqual(
+            (generated / "agents/openai.yaml").read_text(),
+            "policy:\n  allow_implicit_invocation: false\n",
+        )
+
     def test_untargeted_skill(self):
         A = self.apply
         link = self.home / ".codex/skills/demo"
