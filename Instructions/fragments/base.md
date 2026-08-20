@@ -63,8 +63,13 @@ that and say why.
 - If I've asked for too much work at once, stop and say that clearly.
 - If computer use would help complete or verify the work, shell out to
   gpt-5.5 with Codex for it.
-- When proactively creating a simple artifact with no requested format or
-  delivery surface, publish it as a Slate HTML draft.
+- Use the `slate` skill for every standalone HTML report, lesson, document,
+  visual artifact, or preview. Stage HTML locally only for upload, ask at the
+  external-write boundary unless the current request already authorizes
+  publishing, keep it private by default, and return the Slate URL. Fall back
+  to a local temp file only when Slate is unavailable, unauthenticated, or I
+  request local-only output. Project-owned website or application source stays
+  in its repository.
 
 ## Failure modes
 

@@ -8,6 +8,17 @@ This skill guides creation of distinctive, production-grade frontend interfaces 
 
 The user provides frontend requirements: a component, page, application, or interface to build. They may include context about the purpose, audience, or technical constraints.
 
+## Delivery boundary
+
+HTML, CSS, and application code owned by a project stay in that project and use
+its normal build and deployment path. Slate is not an application host.
+
+When the deliverable is a standalone HTML artifact or preview rather than
+project source, use the `slate` skill. Follow its static HTML constraints,
+external-write approval rule, private default, and declared local-only
+fallback. Do not return a local HTML file as the primary delivery when Slate
+is available.
+
 ## Design Thinking
 
 Before coding, understand the context and commit to a BOLD aesthetic direction:

@@ -1,6 +1,6 @@
 ---
 name: improve-codebase-architecture
-description: Scan a codebase for deepening opportunities, present them as a visual HTML report, then grill through whichever one you pick.
+description: Scan a codebase for deepening opportunities, publish them as a private visual Slate report, then grill through whichever one you pick.
 disable-model-invocation: true
 ---
 
@@ -34,11 +34,13 @@ Then spawn a sub-agent to walk the codebase. Don't follow rigid heuristics — e
 
 Apply the **deletion test** to anything you suspect is shallow: would deleting it concentrate complexity, or just move it? A "yes, concentrates" is the signal you want.
 
-### 2. Present candidates as an HTML report
+### 2. Present candidates as a Slate report
 
-Write a self-contained HTML file to the OS temp directory so nothing lands in the repo. Resolve the temp dir from `$TMPDIR`, falling back to `/tmp` (or `%TEMP%` on Windows), and write to `<tmpdir>/architecture-review-<timestamp>.html` so each run gets a fresh file. Open it for the user — `xdg-open <path>` on Linux, `open <path>` on macOS, `start <path>` on Windows — and tell them the absolute path.
+Use the `slate` skill to create and deliver the report. Stage one complete static HTML document at `<tmpdir>/architecture-review-<timestamp>.html`, where `<tmpdir>` comes from `$TMPDIR`, `/tmp`, or `%TEMP%` on Windows. The staged file is only an upload input. Nothing lands in the repository.
 
-The report uses **Tailwind via CDN** for layout and styling, and **Mermaid via CDN** for diagrams where a graph/flow/sequence reliably communicates the structure. Mix Mermaid with hand-crafted CSS/SVG visuals — use Mermaid when relationships are graph-shaped (call graphs, dependencies, sequences), and hand-built divs/SVG when you want something more editorial (mass diagrams, cross-sections, collapse animations). Each candidate gets a **before/after visualisation**. Be visual.
+Slate accepts static HTML only. Use semantic HTML, an inline `<style>` block, and hand-built HTML or inline SVG diagrams. Do not use JavaScript, Mermaid, Tailwind's script CDN, forms, iframes, or local filesystem links. Each candidate gets a before and after visualisation.
+
+Run Slate's read-only auth check before delivery. If the current request has not explicitly authorized publishing, ask immediately before upload. Upload privately and return the Slate URL. Do not open or return the staged local file after a successful upload. Fall back to the staged temp file only when Slate is unavailable, unauthenticated, or the user requests local-only output. State the fallback reason.
 
 For each candidate, render a card with:
 
@@ -55,9 +57,9 @@ End the report with a **Top recommendation** section: which candidate you'd tack
 
 **ADR conflicts**: if a candidate contradicts an existing ADR, only surface it when the friction is real enough to warrant revisiting the ADR. Mark it clearly in the card (e.g. a warning callout: _"contradicts ADR-0007 — but worth reopening because…"_). Don't list every theoretical refactor an ADR forbids.
 
-See [HTML-REPORT.md](HTML-REPORT.md) for the full HTML scaffold, diagram patterns, and styling guidance.
+See [HTML-REPORT.md](HTML-REPORT.md) for the static scaffold, diagram patterns, and styling guidance.
 
-Do NOT propose interfaces yet. After the file is written, ask the user: "Which of these would you like to explore?"
+Do NOT propose interfaces yet. After returning the Slate URL or declared local fallback, ask the user: "Which of these would you like to explore?"
 
 ### 3. Grilling loop
 
