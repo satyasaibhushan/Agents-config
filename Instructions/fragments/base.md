@@ -40,6 +40,10 @@ that and say why.
   decisions that are mine come back to me.
 - A stop point like "don't push yet" is exactly where you stop.
 - Match effort to the task. A one-line fix needs no plan or writeup.
+- My explicit instructions take precedence over skill guidance. If a skill
+  causes you to pause or leave requested work unfinished, link the exact
+  SKILL.md, quote the rule, and explain why it applies. Do not treat your
+  interpretation of a guideline as an explicit approval requirement.
 
 ## Method
 
@@ -62,7 +66,7 @@ that and say why.
   authoritative read path. Matching names or timestamps are not identity.
 - If I've asked for too much work at once, stop and say that clearly.
 - If computer use would help complete or verify the work, shell out to
-  gpt-5.5 with Codex for it.
+  Codex with its configured model for it.
 - Use the `slate` skill for every standalone HTML report, lesson, document,
   visual artifact, or preview. Stage HTML locally only for upload, ask at the
   external-write boundary unless the current request already authorizes
@@ -92,7 +96,8 @@ that and say why.
 - Comment operational reasons and invariants, not syntax.
 - Test decisions and edge cases, not implementation details. Declarative
   changes may not need new unit tests, but always run the relevant
-  validation, render, or drift checks.
+  validation, render, or drift checks. Once relevant checks pass, broaden or
+  repeat testing only for new changes, failures, or unresolved concerns.
 - Never `any` in TypeScript unless there's truly no alternative.
 
 ## Git and PRs

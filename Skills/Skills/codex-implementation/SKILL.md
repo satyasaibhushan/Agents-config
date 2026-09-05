@@ -1,6 +1,6 @@
 ---
 name: codex-implementation
-description: Ask Codex CLI (gpt-5.5) to implement scoped code changes in the current repository, then have Claude inspect the resulting diff and verification. This is how gpt-5.5 is invoked for implementation work. Use when the user asks Claude to delegate implementation to Codex or gpt-5.5, when the model-selection rubric routes the work to gpt-5.5, or when a bounded task would benefit from another coding agent producing a patch.
+description: Ask Codex CLI with its configured model to implement scoped code changes in the current repository, then have Claude inspect the resulting diff and verification. This is how Codex is invoked for implementation work. Use when the user asks Claude to delegate implementation to Codex or a specific Codex model, when the model-selection rubric routes the work to Codex, or when a bounded task would benefit from another coding agent producing a patch.
 ---
 
 # Codex Implementation
@@ -8,6 +8,10 @@ description: Ask Codex CLI (gpt-5.5) to implement scoped code changes in the cur
 Use Codex as a separate implementation agent for bounded code changes. Claude remains responsible for scoping the task, reviewing the diff, running or checking verification, and explaining the final result.
 
 Use this when the user asks for Codex or delegation, or when a bounded task would benefit from a parallel implementation agent producing a patch. Do not let Codex commit, push, deploy, or edit global config unless the user explicitly asked for that.
+
+Use the configured Codex model by default. Pin a model explicitly only when
+the task calls for that specific model. Do not report a model name unless
+verified for the run.
 
 ## Workflow
 

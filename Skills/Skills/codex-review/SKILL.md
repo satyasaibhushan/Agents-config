@@ -1,6 +1,6 @@
 ---
 name: codex-review
-description: Ask Codex CLI (gpt-5.5) for an independent code review of uncommitted changes, a branch diff, a commit, or a specific implementation. This is how gpt-5.5 is invoked for review work. Use when the user asks Claude to have Codex or gpt-5.5 review work, when the model-selection rubric calls for a gpt-5.5 review perspective, or when Codex should audit a diff, find bugs or regressions, or compare Claude's implementation against requirements. For a review by Claude itself, use the normal review process instead.
+description: Ask Codex CLI with its configured model for an independent code review of uncommitted changes, a branch diff, a commit, or a specific implementation. This is how Codex is invoked for review work. Use when the user asks Claude to have Codex or a specific Codex model review work, when the model-selection rubric calls for a Codex review perspective, or when Codex should audit a diff, find bugs or regressions, or compare Claude's implementation against requirements. For a review by Claude itself, use the normal review process instead.
 ---
 
 # Codex Review
@@ -8,6 +8,10 @@ description: Ask Codex CLI (gpt-5.5) for an independent code review of uncommitt
 Use Codex as an independent reviewer when the user wants a second-pass review or when a change is broad enough that another agent's perspective is useful.
 
 Prefer Claude's normal review process for small local checks. Do not delegate review just to avoid reading the code yourself. Treat Codex's output as evidence, not authority.
+
+Use the configured Codex model by default. Pin a model explicitly only when
+the task calls for that specific model. Do not report a model name unless
+verified for the run.
 
 ## Workflow
 
