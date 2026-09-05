@@ -11,6 +11,7 @@
 #            override the default per server
 # skills     default-allow | default-deny — skills.json `profiles` lists
 #            override the default per skill
+# skill_clients default agent skill roots for sparse skills.json `clients`
 # preflight  hard checks that must pass before anything runs
 version: 1
 profiles:
@@ -21,6 +22,7 @@ profiles:
     fragments: [base.md]
     mcps: default-allow
     skills: default-allow
+    skill_clients: [claude-code, codex, cursor]
   devbox-admin:
     platform: linux
     mode: read-write

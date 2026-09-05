@@ -49,11 +49,18 @@ Do not replace an entire agent-managed skills directory with one symlink.
 }
 ```
 
-Both fields are **sparse**. An absent `clients` field targets every agent
-(`agents`, `claude-code`, `codex`, `cursor`). An absent `profiles` field follows
-the active profile's `skills` default policy. Consequently, a `default-deny`
-profile installs only skills that explicitly name it. Out-of-scope skills are
-left untouched. During apply:
+Both fields are **sparse**. An absent `clients` field targets the active
+profile's `skill_clients`. If `clients` is present, it is still intersected
+with `skill_clients`, so a profile that does not use the generic `agents` root
+will not install the same skill in both `~/.agents/skills` and a provider
+specific root. An absent `profiles` field follows the active profile's `skills`
+default policy. Consequently, a `default-deny` profile installs only skills
+that explicitly name it. Out-of-scope skills are left untouched. During apply:
+
+Profiles may also set `skill_clients` in `profiles.yaml` to limit which live
+skill roots they reconcile at all. This is the right place to exclude an
+overlapping discovery root such as `agents` on a machine that should only use
+provider-specific roots like Codex, Claude Code, and Cursor.
 
 - a skill present in an agent it does not target shows as `untargeted` — keep (target the agent) or overwrite (remove the link, backed up)
 - a targeted skill missing from an agent — overwrite (link it) or keep (stop targeting that agent)

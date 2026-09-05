@@ -17,7 +17,8 @@ scripts/        agents-config — the reconciling apply for all of the above
 Every run works under a profile from `profiles.yaml` (`mac-admin`,
 `devbox-admin`, `devbox-agent`, ...). A profile pins the platform, the code
 root (`${CODE_ROOT}`), the instruction fragments to render, default-allow or
-default-deny policies for MCPs and skills, preflight checks (e.g. the
+default-deny policies for MCPs and skills, an optional `skill_clients` subset
+of discovery roots, preflight checks (e.g. the
 restricted agent account must not be root or in a privileged group), and the
 mode:
 
@@ -84,7 +85,9 @@ executable/path/secret) are reported with the reason and left exactly as found.
 `Skills/Skills/<skill-name>/SKILL.md` is the canonical layout. Agents, Claude
 Code, and Cursor point at it with per-skill symlinks. Codex points at a
 generated per-skill view that translates provider-specific metadata. A sparse
-`Skills/skills.json` targets skills at specific agents; see `Skills/README.md`.
+`Skills/skills.json` targets skills at specific agents, and each profile may
+further limit which discovery roots it uses via `skill_clients`; see
+`Skills/README.md`.
 
 ## MCPs
 

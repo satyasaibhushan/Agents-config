@@ -19,11 +19,13 @@ detect     secrets from ~/.config/agents-config/mcp.env (legacy MCPs/.env.local)
 preview    recomputes every affected item row (including promote ripple onto
            providers that were in sync with the old base) before anything is
            written. Zero writes before confirm; backups always.
-targeting  skills mirror the MCP `clients` key via Skills/skills.json:
+targeting  skills use the active profile's `skill_clients` as their default
+           client set, then mirror the MCP `clients` key via Skills/skills.json:
              {"version": 1, "skills": {"<name>": {
                "clients": ["claude-code"], "profiles": ["mac-admin"]}}}
-           Both fields are sparse: absent clients targets every agent; absent
-           profiles follows the active profile's skills default policy.
+           Both fields are sparse: absent clients targets the profile's skill
+           clients; absent profiles follows the active profile's skills default
+           policy.
            Reconcile decisions (keep here / stop targeting / target this agent)
            rewrite the manifest on confirm.
 instructions (AC-3)
@@ -308,8 +310,9 @@ def plan_mcps(genmod, servers, env, home, ignore=frozenset()):
 def load_skill_targets(profiles):
     """Skills/skills.json -> {name: {clients?, profiles?}}.
 
-    Both keys are sparse. An absent clients key targets every agent; an absent
-    profiles key follows the active profile's skills default policy.
+    Both keys are sparse. An absent clients key targets the active profile's
+    skill clients; an absent profiles key follows the active profile's skills
+    default policy.
     """
     if not SKILLS_MANIFEST.exists():
         return {}
@@ -342,6 +345,10 @@ def load_skill_targets(profiles):
     return targets
 
 
+def configured_skill_clients(name, targets):
+    return targets.get(name, {}).get("clients", list(SKILL_AGENTS))
+
+
 def skill_clients(name, targets, profile):
     entry = targets.get(name, {})
     allowed_profiles = entry.get("profiles")
@@ -351,7 +358,10 @@ def skill_clients(name, targets, profile):
         enabled = profile.get("skills", "default-allow") == "default-allow"
     if not enabled:
         return []
-    return entry.get("clients", list(SKILL_AGENTS))
+    profile_clients = profile.get("skill_clients", list(SKILL_AGENTS))
+    target_clients = configured_skill_clients(name, targets)
+    return [agent for agent in SKILL_AGENTS
+            if agent in profile_clients and agent in target_clients]
 
 
 def write_skill_targets(targets):
@@ -539,6 +549,7 @@ def plan_skills(home, targets, profile):
     items = {}
     for agent, rel in SKILL_AGENTS.items():
         agent_dir = home / rel
+        profile_clients = profile.get("skill_clients", list(SKILL_AGENTS))
         ignore = SKILL_IGNORE.get(agent, set())
         seen = set()
         if agent_dir.is_dir():
@@ -546,6 +557,8 @@ def plan_skills(home, targets, profile):
                 name = target.name
                 if name.startswith(".") or name in ignore:
                     continue
+                if agent not in profile_clients and name not in canonical:
+                    continue  # excluded roots do not import unrelated live skills
                 seen.add(name)
                 if name in canonical and not skill_clients(name, targets, profile):
                     continue  # out of scope: leave the live entry untouched
@@ -555,11 +568,14 @@ def plan_skills(home, targets, profile):
                 if (name in canonical and cell["state"] != FOREIGN
                         and agent not in skill_clients(name, targets, profile)):
                     # in canonical, present live, but this agent isn't targeted
+                    profile_clients = profile.get(
+                        "skill_clients", list(SKILL_AGENTS))
                     cell = {
                         "state": UNTARGETED,
                         "kind": "dir" if cell["state"] == UNLINKED else "link",
                         "identical": cell.get("identical", True),
                         "path": str(target),
+                        "profile_excluded": agent not in profile_clients,
                     }
                 items.setdefault(name, {})[agent] = cell
         for name in canonical:
@@ -715,6 +731,15 @@ def resolve_profile(args, profiles):
         if profile.get(policy, "default-allow") not in POLICY_VALUES:
             sys.exit(f"error: profiles.yaml: {name}: {policy} must be one of: "
                      + ", ".join(POLICY_VALUES))
+    if not isinstance(profile.get("skill_clients", list(SKILL_AGENTS)), list):
+        sys.exit(f"error: profiles.yaml: {name}: skill_clients must be a [list]")
+    unknown_skill_clients = [
+        client for client in profile.get("skill_clients", list(SKILL_AGENTS))
+        if client not in SKILL_AGENTS
+    ]
+    if unknown_skill_clients:
+        sys.exit(f"error: profiles.yaml: {name}: unknown skill client(s): "
+                 + ", ".join(unknown_skill_clients))
     if not isinstance(profile.get("fragments", []), list):
         sys.exit(f"error: profiles.yaml: {name}: fragments must be a [list]")
     return profile
@@ -1264,7 +1289,7 @@ def reconcile_skills(items, canonical, targets, home, profile, read_only=False):
     new_targets = {name: dict(entry) for name, entry in targets.items()}
 
     def clients_of(name):
-        return skill_clients(name, new_targets, profile)
+        return configured_skill_clients(name, new_targets)
 
     def set_clients(name, clients):
         ordered = [a for a in SKILL_AGENTS if a in clients]
@@ -1301,15 +1326,17 @@ def reconcile_skills(items, canonical, targets, home, profile, read_only=False):
             for digest, agents in groups.items():
                 src = Path(added[agents[0]]["path"])
                 print(f"  added in {', '.join(agents)}: {src}")
+                active_clients = profile.get(
+                    "skill_clients", list(SKILL_AGENTS))
                 choice = ask("", filter_choices({
-                    "k": "keep — import into canonical, target ALL agents",
+                    "k": "keep — import into canonical, target ALL profile clients",
                     "t": f"keep here — import, target only: {', '.join(agents)}",
                     "o": "overwrite — remove it from the agent(s) (backed up)",
                     "s": "skip",
                 }, read_only))
                 if choice in ("k", "t"):
                     ops.append(("import", name, None, src, CANONICAL_SKILLS / name))
-                    chosen = list(SKILL_AGENTS) if choice == "k" else agents
+                    chosen = active_clients if choice == "k" else agents
                     set_clients(name, chosen)
                     for agent in chosen:
                         ops.append(("link", name, agent, CANONICAL_SKILLS / name,
@@ -1424,7 +1451,9 @@ def reconcile_skills(items, canonical, targets, home, profile, read_only=False):
                 detail = "canonical symlink" if cell["kind"] == "link" else (
                     "real copy, identical" if cell["identical"]
                     else "real copy, content DIFFERS from canonical")
-                print(f"  present in {agent} ({detail}), but canonical does not target it")
+                exclusion = ("the active profile" if cell.get("profile_excluded")
+                             else "canonical")
+                print(f"  present in {agent} ({detail}), but {exclusion} does not target it")
                 keep_label = "keep — target this agent in Skills/skills.json"
                 if cell["kind"] == "dir":
                     if agent == "codex":
@@ -1432,11 +1461,13 @@ def reconcile_skills(items, canonical, targets, home, profile, read_only=False):
                     else:
                         keep_label += (", relink the copy" if cell["identical"] else
                                        "; edits go into canonical (ALL agents), then relink")
-                choice = ask("", filter_choices({
-                    "k": keep_label,
+                choices = {
                     "o": "overwrite — remove it from the agent (backed up)",
                     "s": "skip",
-                }, read_only))
+                }
+                if not cell.get("profile_excluded"):
+                    choices = {"k": keep_label, **choices}
+                choice = ask("", filter_choices(choices, read_only))
                 if choice == "k":
                     set_clients(name, clients_of(name) + [agent])
                     if cell["kind"] == "dir":

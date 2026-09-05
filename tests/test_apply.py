@@ -463,6 +463,134 @@ class SkillPlanTest(ApplyTestCase):
         self.assertIn("demo", items)
         self.assertNotIn("blocked", items)
 
+    def test_profile_without_skill_clients_targets_all_roots(self):
+        profile = {"name": "devbox-admin", "skills": "default-allow"}
+
+        items, _ = self.apply.plan_skills(self.home, {"demo": {}}, profile)
+
+        self.assertEqual(set(items["demo"]), set(self.apply.SKILL_AGENTS))
+
+    def test_profile_skill_clients_prevent_duplicate_discovery_roots(self):
+        local_only = self.home / ".agents/skills/local-only"
+        local_only.mkdir(parents=True)
+        (local_only / "SKILL.md").write_text("local\n")
+        profile = {
+            "name": "mac-admin",
+            "skills": "default-allow",
+            "skill_clients": ["claude-code", "codex", "cursor"],
+        }
+
+        items, _ = self.apply.plan_skills(self.home, {"demo": {}}, profile)
+
+        self.assertNotIn("agents", items["demo"])
+        self.assertNotIn("local-only", items)
+        self.assertEqual(
+            set(items["demo"]),
+            {"claude-code", "codex", "cursor"},
+        )
+
+    def test_profile_skill_clients_mark_generic_root_duplicate_untargeted(self):
+        link = self.home / ".agents/skills/demo"
+        link.parent.mkdir(parents=True)
+        link.symlink_to(self.canonical / "demo")
+        for relpath in (".claude/skills/demo", ".cursor/skills/demo"):
+            provider_link = self.home / relpath
+            provider_link.parent.mkdir(parents=True)
+            provider_link.symlink_to(self.canonical / "demo")
+        codex_link = self.home / ".codex/skills/demo"
+        self.apply.apply_skill_ops([
+            ("link", "demo", "codex", self.canonical / "demo", codex_link),
+        ], self.home, "20260820-000001")
+        profile = {
+            "name": "mac-admin",
+            "skills": "default-allow",
+            "skill_clients": ["claude-code", "codex", "cursor"],
+        }
+
+        items, _ = self.apply.plan_skills(self.home, {"demo": {}}, profile)
+
+        self.assertEqual(items["demo"]["agents"]["state"], self.apply.UNTARGETED)
+        self.assertTrue(items["demo"]["agents"]["profile_excluded"])
+
+        self.apply.ask = lambda *_args, **_kwargs: "o"
+        ops, new_targets, skipped = self.apply.reconcile_skills(
+            items,
+            {"demo": self.canonical / "demo"},
+            {"demo": {}},
+            self.home,
+            profile,
+        )
+        self.assertEqual(
+            ops,
+            [("remove", "demo", "agents", None, link)],
+        )
+        self.assertEqual(new_targets, {"demo": {}})
+        self.assertEqual(skipped, [])
+
+    def test_explicit_skill_clients_are_limited_by_profile(self):
+        profile = {
+            "name": "devbox-agent",
+            "skills": "default-allow",
+            "skill_clients": ["agents"],
+        }
+        targets = {"demo": {"clients": ["agents", "codex"]}}
+
+        items, _ = self.apply.plan_skills(self.home, targets, profile)
+
+        self.assertEqual(set(items["demo"]), {"agents"})
+
+    def test_import_all_targets_only_active_profile_clients(self):
+        added = self.home / ".claude/skills/added"
+        added.mkdir(parents=True)
+        (added / "SKILL.md").write_text("added\n")
+        profile = {
+            "name": "mac-admin",
+            "skills": "default-allow",
+            "skill_clients": ["claude-code", "codex", "cursor"],
+        }
+        items, canonical = self.apply.plan_skills(self.home, {}, profile)
+        self.apply.ask = lambda *_args, **_kwargs: "k"
+
+        ops, new_targets, skipped = self.apply.reconcile_skills(
+            items, canonical, {}, self.home, profile
+        )
+
+        linked_clients = {
+            agent for action, _name, agent, _src, _dest in ops
+            if action == "link"
+        }
+        self.assertEqual(linked_clients, {"claude-code", "codex", "cursor"})
+        self.assertEqual(
+            new_targets["added"]["clients"],
+            ["claude-code", "codex", "cursor"],
+        )
+        self.assertEqual(skipped, [])
+
+    def test_missing_keep_preserves_clients_excluded_by_profile(self):
+        profile = {
+            "name": "mac-admin",
+            "skills": "default-allow",
+            "skill_clients": ["claude-code", "codex", "cursor"],
+        }
+        items = {"demo": {"cursor": {"state": self.apply.MISSING}}}
+        targets = {"demo": {}}
+        self.apply.ask = lambda *_args, **_kwargs: "k"
+
+        ops, new_targets, skipped = self.apply.reconcile_skills(
+            items,
+            {"demo": self.canonical / "demo"},
+            targets,
+            self.home,
+            profile,
+        )
+
+        self.assertEqual(ops, [])
+        self.assertEqual(
+            new_targets["demo"]["clients"],
+            ["agents", "claude-code", "codex"],
+        )
+        self.assertEqual(skipped, [])
+
     def test_skill_manifest_profiles_are_validated_and_preserved(self):
         manifest = self.tmp / "skills.json"
         manifest.write_text(json.dumps({"version": 1, "skills": {
@@ -653,6 +781,30 @@ class ProfileTest(ApplyTestCase):
         with self.assertRaises(SystemExit):
             self.apply.resolve_profile(args, PROFILES)
 
+    def test_profile_skill_clients_are_validated(self):
+        profiles = {
+            "mac-admin": {
+                "platform": "darwin",
+                "fragments": ["base.md"],
+                "skill_clients": ["claude-code", "codex", "cursor"],
+            },
+        }
+        args = self.args("--profile", "mac-admin", "--platform", "darwin")
+
+        profile = self.apply.resolve_profile(args, profiles)
+        self.assertEqual(
+            profile["skill_clients"],
+            ["claude-code", "codex", "cursor"],
+        )
+
+        profiles["mac-admin"]["skill_clients"] = ["codex", "agent"]
+        with self.assertRaises(SystemExit):
+            self.apply.resolve_profile(args, profiles)
+
+        profiles["mac-admin"]["skill_clients"] = "codex"
+        with self.assertRaises(SystemExit):
+            self.apply.resolve_profile(args, profiles)
+
     def test_first_run_requires_profile(self):
         with self.assertRaises(SystemExit):
             self.apply.resolve_profile(self.args("--platform", "darwin"), PROFILES)
@@ -673,6 +825,10 @@ class ProfileTest(ApplyTestCase):
         profiles = self.apply.load_profiles()
         for name in ("mac-admin", "devbox-admin", "devbox-agent"):
             self.assertIn(name, profiles)
+        self.assertEqual(
+            profiles["mac-admin"]["skill_clients"],
+            ["claude-code", "codex", "cursor"],
+        )
         agent = profiles["devbox-agent"]
         self.assertEqual(agent["mode"], "read-only")
         self.assertEqual(agent["mcps"], "default-deny")
