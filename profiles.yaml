@@ -24,14 +24,14 @@ profiles:
   devbox-admin:
     platform: linux
     mode: read-write
-    code_root: /srv/code
+    code_root: /srv/Code
     fragments: [base.md, devbox.md]
     mcps: default-allow
     skills: default-allow
   devbox-agent:
     platform: linux
     mode: read-only
-    code_root: /srv/code
+    code_root: /srv/Code
     fragments: [base.md, devbox.md, restricted-agent.md]
     mcps: default-deny
     skills: default-deny
