@@ -13,7 +13,7 @@ absolute and override anything else in this document:
 - Ask before destructive actions; preserve unrelated working-tree changes.
 
 Development work includes branching, editing, testing, committing, and authorized
-MCP writes. Create private checkouts under `/srv/Code/agent`; preserve the human's
-existing checkouts. Read your own `~/Agents/Config` and `~/Agents/Workflows` for
+MCP writes. Use the existing checkout under `/srv/Code` that DevDock deploys and
+syncs. Preserve unrelated edits and coordinate branch changes in shared checkouts. Read your own `~/Agents/Config` and `~/Agents/Workflows` for
 instructions and skills. The development DevDock socket permits repository and
 pod operations, but not another user's host terminals or remote instance routing.

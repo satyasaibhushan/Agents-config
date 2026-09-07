@@ -170,18 +170,18 @@
           "node"
         ],
         "paths": [
-          "${CODE_ROOT}/.devdock-access/runtime/mcp/dist/index.js",
-          "${CODE_ROOT}/.devdock-access/control.sock"
+          "/srv/devdock-control/runtime/mcp/dist/index.js",
+          "/srv/devdock-control/control.sock"
         ]
       },
       "config": {
         "type": "stdio",
         "command": "node",
         "args": [
-          "${CODE_ROOT}/.devdock-access/runtime/mcp/dist/index.js"
+          "/srv/devdock-control/runtime/mcp/dist/index.js"
         ],
         "env": {
-          "DEVDOCK_SOCKET": "${CODE_ROOT}/.devdock-access/control.sock",
+          "DEVDOCK_SOCKET": "/srv/devdock-control/control.sock",
           "DEVDOCK_MCP_SCOPE": "rw",
           "DEVDOCK_MCP_DEVELOPMENT_ONLY": "1"
         }

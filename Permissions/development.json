@@ -20,11 +20,5 @@
     "mcp__db-devbox",
     "mcp__es-devbox"
   ],
-  "network_access": true,
-  "directories_by_profile": {
-    "devbox-agent": [
-      "${CODE_ROOT}/agent",
-      "${HOME}/Agents"
-    ]
-  }
+  "network_access": true
 }
