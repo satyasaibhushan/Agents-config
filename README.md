@@ -113,3 +113,11 @@ Existing files use an explicit user ACL; directory defaults preserve that access
 for new code. Keep protected runtimes outside this tree. DevDock uses
 `/srv/devdock-control`, owned by the daemon user with group read/execute access.
 MCP definitions remain in `MCPs/servers.json`; service-side authorization applies.
+
+## Shared devbox layout
+
+Both devbox accounts use `/srv/Agents/Config` and `/srv/Agents/Workflows`.
+Their `~/Agents` links preserve existing references. Skill links and the apply
+launcher target the shared Config checkout; generated provider files remain
+per-user. Workflows is a shared Git checkout, writable by `devbox-shared`.
+Laptop and devbox are separate checkouts, not an automatic file-sync service.

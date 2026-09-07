@@ -19,6 +19,9 @@ if profile_name not in policy['profiles']:
 code_root = str(Path(profile['code_root']).expanduser())
 policy['directories'] = policy.pop('directories_by_profile', {}).get(profile_name, policy['directories'])
 policy['directories'] = [v.replace('${CODE_ROOT}', code_root).replace('${HOME}', str(home)) for v in policy['directories']]
+shared_workflows = root.parent / 'Workflows'
+if profile['platform'] == 'linux' and shared_workflows.is_dir():
+    policy['directories'].append(str(shared_workflows))
 stamp = datetime.now().strftime('%Y%m%d-%H%M%S')
 def write(path, content):
     api['backup'](path, home, stamp)
