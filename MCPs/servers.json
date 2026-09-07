@@ -132,6 +132,7 @@
       }
     },
     "devdock": {
+      "platforms": ["darwin"],
       "clients": ["claude-code", "codex", "claude-desktop"],
       "security": "controls local dev containers (read-write scope)",
       "requires": {
@@ -148,6 +149,96 @@
         "env": {
           "DEVDOCK_MCP_SCOPE": "rw"
         }
+      }
+    },
+    "devdock-devbox": {
+      "codex": { "default_tools_approval_mode": "approve" },
+      "clients": [
+        "claude-code",
+        "codex"
+      ],
+      "platforms": [
+        "linux"
+      ],
+      "profiles": [
+        "devbox-admin",
+        "devbox-agent"
+      ],
+      "security": "Development operations through a scoped local socket; no host terminals or peer routing",
+      "requires": {
+        "executables": [
+          "node"
+        ],
+        "paths": [
+          "${CODE_ROOT}/.devdock-access/runtime/mcp/dist/index.js",
+          "${CODE_ROOT}/.devdock-access/control.sock"
+        ]
+      },
+      "config": {
+        "type": "stdio",
+        "command": "node",
+        "args": [
+          "${CODE_ROOT}/.devdock-access/runtime/mcp/dist/index.js"
+        ],
+        "env": {
+          "DEVDOCK_SOCKET": "${CODE_ROOT}/.devdock-access/control.sock",
+          "DEVDOCK_MCP_SCOPE": "rw",
+          "DEVDOCK_MCP_DEVELOPMENT_ONLY": "1"
+        }
+      }
+    },
+    "db-devbox": {
+      "codex": { "default_tools_approval_mode": "approve" },
+      "clients": [
+        "claude-code",
+        "codex"
+      ],
+      "platforms": [
+        "linux"
+      ],
+      "profiles": [
+        "devbox-admin",
+        "devbox-agent"
+      ],
+      "requires": {
+        "paths": [
+          "/usr/local/bin/vmock-mcp",
+          "/run/vmock-mcp-db.sock"
+        ]
+      },
+      "config": {
+        "type": "stdio",
+        "command": "/usr/local/bin/vmock-mcp",
+        "args": [
+          "db"
+        ]
+      }
+    },
+    "es-devbox": {
+      "codex": { "default_tools_approval_mode": "approve" },
+      "clients": [
+        "claude-code",
+        "codex"
+      ],
+      "platforms": [
+        "linux"
+      ],
+      "profiles": [
+        "devbox-admin",
+        "devbox-agent"
+      ],
+      "requires": {
+        "paths": [
+          "/usr/local/bin/vmock-mcp",
+          "/run/vmock-mcp-es.sock"
+        ]
+      },
+      "config": {
+        "type": "stdio",
+        "command": "/usr/local/bin/vmock-mcp",
+        "args": [
+          "es"
+        ]
       }
     }
   }

@@ -100,3 +100,15 @@ scoped per platform/profile. See `MCPs/README.md`.
 Provider instruction files render as the concatenation of the active profile's
 `Instructions/fragments/*` plus an optional per-provider extra; see
 `Instructions/README.md`.
+
+## Development permissions
+
+`Permissions/development.json` owns the approved development tool and directory
+profile. Apply it with `python3 scripts/development-access.py` after selecting a
+devbox profile. It preserves unrelated settings, renders instructions, and links
+missing skills through the existing reconciler.
+
+The restricted account uses `/srv/Code/agent` for writable checkouts. Do not add
+the read-only `/srv/Code` parent as a writable sandbox root: sandbox setup needs
+to create protected metadata placeholders at each root. MCP definitions remain
+in `MCPs/servers.json`; their service-side authorization still applies.

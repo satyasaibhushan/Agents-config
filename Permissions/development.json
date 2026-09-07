@@ -1,0 +1,30 @@
+{
+  "profiles": [
+    "devbox-admin",
+    "devbox-agent"
+  ],
+  "directories": [
+    "${CODE_ROOT}",
+    "${HOME}/Agents"
+  ],
+  "allow": [
+    "Read",
+    "Glob",
+    "Grep",
+    "Write",
+    "Edit",
+    "Bash",
+    "WebFetch",
+    "WebSearch",
+    "mcp__devdock-devbox",
+    "mcp__db-devbox",
+    "mcp__es-devbox"
+  ],
+  "network_access": true,
+  "directories_by_profile": {
+    "devbox-agent": [
+      "${CODE_ROOT}/agent",
+      "${HOME}/Agents"
+    ]
+  }
+}
