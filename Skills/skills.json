@@ -1,7 +1,7 @@
 {
   "version": 1,
   "skills": {
-    "babysit-pr": {"profiles": ["mac-admin", "devbox-admin"]},
+    "babysit-pr": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
     "blast-radius": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
     "codex-computer-use": {
       "clients": ["claude-code"],
