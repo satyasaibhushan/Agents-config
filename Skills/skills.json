@@ -1,6 +1,9 @@
 {
   "version": 1,
   "skills": {
+    "background-task": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
+    "devdock-development": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
+    "capture-evidence": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
     "babysit-pr": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
     "blast-radius": {"profiles": ["mac-admin", "devbox-admin", "devbox-agent"]},
     "codex-computer-use": {
