@@ -1,8 +1,9 @@
 #!/bin/sh
-# Install the launcher for the current account without copying repo files.
+# Install the launcher and shared shell hooks for the current account.
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+python3 "$SCRIPT_DIR/install-shell.py"
 BIN_DIR="${HOME}/.local/bin"
 TARGET="$BIN_DIR/agents-config"
 
@@ -10,10 +11,4 @@ mkdir -p "$BIN_DIR"
 ln -sfn "$SCRIPT_DIR/agents-config" "$TARGET"
 
 echo "installed: $TARGET -> $SCRIPT_DIR/agents-config"
-case ":${PATH}:" in
-  *":${BIN_DIR}:"*) ;;
-  *)
-    echo "note: add $BIN_DIR to PATH, then open a new shell:" >&2
-    echo '  export PATH="$HOME/.local/bin:$PATH"' >&2
-    ;;
-esac
+echo "Shared shell configuration installed. Open a new shell to load it."

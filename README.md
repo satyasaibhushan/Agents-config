@@ -9,6 +9,7 @@ profiles.yaml   Named profiles — one per (machine, account) shape
 Skills/         Custom/shared agent skills
 MCPs/           Canonical MCP server definitions and sync scripts
 Instructions/   Canonical agent instructions, split into fragments
+Shell/          Shared bash and zsh configuration
 scripts/        agents-config — the reconciling apply for all of the above
 ```
 
@@ -36,8 +37,36 @@ Install the launcher once for each account after cloning:
 ~/Agents/Config/scripts/install
 ```
 
-This creates only a `~/.local/bin/agents-config` symlink back to the checkout.
-It does not copy configuration, so a pull updates every linked account.
+This creates a `~/.local/bin/agents-config` symlink back to the checkout and
+installs shell startup hooks. It requires Python 3. Configuration is sourced
+from the checkout, so a pull updates every linked account's next shell.
+
+## Shell configuration
+
+`Shell/shared.sh` is the single shared file for interactive bash and zsh on
+macOS and Linux. Add portable aliases, functions, and environment settings here.
+Keep secrets, prompts, shell plugins, and machine-specific initialization local.
+Use `case "$(uname -s)"` when a shared helper needs different platform behavior.
+
+The shared file includes Git, DevSpace, Kubernetes, repository navigation, and
+C++ helpers migrated from the Mac startup files. Repository shortcuts use
+`CODE_ROOT`, defaulting to `/srv/Code` when present or `~/Code` otherwise.
+Git PR helpers open the configured browser on macOS, use `xdg-open` on Linux
+desktops, and print the URL in headless sessions. Commands such as `git`,
+`devspace`, `kubectl`, and `g++` still need to be installed where used.
+
+Run `scripts/install` once per account after cloning, including on devbox.
+It adds a managed source block to `.bashrc`, `.zshrc` under `${ZDOTDIR:-$HOME}`,
+and the first existing bash login file: `.bash_profile`, `.bash_login`, or
+`.profile`. If none exists, it creates `.bash_profile`. Existing contents stay
+in place; modified files are backed up under
+`~/.local/state/agents-config/backups/shell-*/`. Repeating installation does not
+duplicate hooks. If `.zshenv` sets `ZDOTDIR`, export it when running the installer.
+
+Edits and pulls take effect in new interactive shells. To reload an existing
+shell, source `Shell/shared.sh` from the checkout. Already running shells do
+not reload automatically. Shell hooks are installed separately from
+`agents-config plan/apply`; those commands still reconcile agent configuration.
 
 ## Apply (reconciling)
 
