@@ -6,6 +6,8 @@
 # mode       read-write may promote into canonical; read-only may only sync
 #            (read-only is also forced whenever the checkout is not writable)
 # code_root  expands ${CODE_ROOT} in MCP definitions
+# git_email  user.email written to the account's global git config by
+#            scripts/install-git.py (omit to leave the local value alone)
 # fragments  ordered Instructions/fragments/* rendered into provider files
 # mcps       default-allow | default-deny — servers.json `profiles` lists
 #            override the default per server
@@ -19,6 +21,7 @@ profiles:
     platform: darwin
     mode: read-write
     code_root: ~/Code
+    git_email: satyasaibhushan@gmail.com
     fragments: [base.md]
     mcps: default-allow
     skills: default-allow
@@ -27,6 +30,7 @@ profiles:
     platform: linux
     mode: read-write
     code_root: /srv/Code
+    git_email: satyasaibhushan@gmail.com
     fragments: [base.md, devbox.md]
     mcps: default-allow
     skills: default-allow
@@ -34,6 +38,7 @@ profiles:
     platform: linux
     mode: read-only
     code_root: /srv/Code
+    git_email: satyasaibhushan@gmail.com
     fragments: [base.md, devbox.md, restricted-agent.md]
     mcps: default-deny
     skills: default-deny

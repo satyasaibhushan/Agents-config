@@ -1,9 +1,10 @@
 #!/bin/sh
-# Install the launcher and shared shell hooks for the current account.
+# Install the launcher, shared shell hooks, and shared git config for the current account.
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 python3 "$SCRIPT_DIR/install-shell.py"
+python3 "$SCRIPT_DIR/install-git.py" "$@"
 BIN_DIR="${HOME}/.local/bin"
 TARGET="$BIN_DIR/agents-config"
 
@@ -11,4 +12,4 @@ mkdir -p "$BIN_DIR"
 ln -sfn "$SCRIPT_DIR/agents-config" "$TARGET"
 
 echo "installed: $TARGET -> $SCRIPT_DIR/agents-config"
-echo "Shared shell configuration installed. Open a new shell to load it."
+echo "Shared shell and git configuration installed. Open a new shell to load it."

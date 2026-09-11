@@ -1,0 +1,4 @@
+# GitHub CLI aliases, applied with `gh alias set --clobber` by
+# scripts/install-git.py when gh is installed.
+aliases:
+  co: pr checkout

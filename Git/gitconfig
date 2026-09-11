@@ -1,0 +1,5 @@
+# Shared git configuration, loaded through include.path from the account's
+# global git config (scripts/install-git.py). Identity email is per profile
+# (profiles.yaml git_email) and written into the local global config instead.
+[user]
+	name = Sai Bhushan

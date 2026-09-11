@@ -10,6 +10,7 @@ Skills/         Custom/shared agent skills
 MCPs/           Canonical MCP server definitions and sync scripts
 Instructions/   Canonical agent instructions, split into fragments
 Shell/          Shared bash and zsh configuration
+Git/            Shared git config, global ignore, and gh aliases
 scripts/        agents-config — the reconciling apply for all of the above
 ```
 
@@ -38,7 +39,7 @@ Install the launcher once for each account after cloning:
 ```
 
 This creates a `~/.local/bin/agents-config` symlink back to the checkout and
-installs shell startup hooks. It requires Python 3. Configuration is sourced
+installs the shell startup hooks and git configuration. It requires Python 3. Configuration is sourced
 from the checkout, so a pull updates every linked account's next shell.
 
 ## Shell configuration
@@ -67,6 +68,31 @@ Edits and pulls take effect in new interactive shells. To reload an existing
 shell, source `Shell/shared.sh` from the checkout. Already running shells do
 not reload automatically. Shell hooks are installed separately from
 `agents-config plan/apply`; those commands still reconcile agent configuration.
+
+## Git configuration
+
+`Git/` holds the shared git setup. `scripts/install` wires it in by reference,
+so a pull updates every linked account without reinstalling:
+
+- `Git/gitconfig` is loaded through `include.path` in the account's global git
+  config. Shared identity (`user.name`) and any aliases live here.
+- `Git/ignore` becomes `core.excludesFile`. It carries the `.agents/*` tooling
+  ignores and macOS noise, replacing the per-machine `~/.gitignore_global`.
+- `Git/gh.yaml` lists GitHub CLI aliases, applied with `gh alias set --clobber`
+  when `gh` is installed.
+
+`user.email` differs per machine, so it comes from the active profile's
+`git_email` in `profiles.yaml` and is written as a literal into the global git
+config. The profile is the one saved by `agents-config apply`; pass
+`scripts/install --profile <name>` to override. A profile without `git_email`
+leaves the local value alone.
+
+Everything else in the global git config stays untouched. A local `user.name`
+equal to the shared one is removed so the include owns it; a differing one is
+kept with a warning. The global config and gh config are backed up under
+`~/.local/state/agents-config/backups/git-*/` before the first write. Reading
+values back needs `git config --get` without `--global`: scoped reads skip
+includes.
 
 ## Apply (reconciling)
 

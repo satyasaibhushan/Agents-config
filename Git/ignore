@@ -1,0 +1,12 @@
+# Global excludes, wired in as core.excludesFile by scripts/install-git.py.
+# Agent-local tooling that must never reach a shared repository.
+.agents/scripts/
+.agents/instances/
+.agents/replicas/
+**/.claude/settings.local.json
+
+# macOS noise
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
