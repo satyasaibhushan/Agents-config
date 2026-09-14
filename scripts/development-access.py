@@ -52,6 +52,8 @@ serialize = api['load_genmod']().toml_value
 # so each glob is anchored under every managed directory.
 filesystem = {d: 'write' for d in policy['directories']}
 filesystem.update({d+'/'+glob: 'deny' for d in policy['directories'] for glob in policy['deny_read']})
+# Bound the pre-start scan: unbounded it adds ~7s per session on /srv/Code; real secrets sit at depth <= 7.
+filesystem['glob_scan_max_depth'] = 8
 content = 'default_permissions = "development"\n' + content.rstrip('\n') + '\n'
 content += '\n[permissions.development]\nextends = ":workspace"\n'
 content += '\n[permissions.development.filesystem]\n' + ''.join(json.dumps(k)+' = '+serialize(v)+'\n' for k, v in filesystem.items())

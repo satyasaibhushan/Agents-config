@@ -26,6 +26,7 @@ def test_development_apply_preserves_other_settings(tmp_path):
     assert profile['filesystem'][str(tmp_path / 'Agents')] == 'write'
     assert profile['filesystem'][str(tmp_path / 'Agents') + '/**/.env*'] == 'deny'
     assert not [k for k in profile['filesystem'] if k.startswith('/**')]
+    assert profile['filesystem']['glob_scan_max_depth'] == 8
     assert profile['network']['enabled'] is True
     assert list(result['permissions']) == ['development']
     policy = json.loads((tmp_path / '.config/agents-config/development.json').read_text())
