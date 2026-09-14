@@ -23,3 +23,5 @@ def test_development_apply_preserves_other_settings(tmp_path):
     policy = json.loads((tmp_path / '.config/agents-config/development.json').read_text())
     assert str(tmp_path / 'Agents') in policy['directories']
     assert 'Bash' in policy['allow']
+    settings = json.loads((tmp_path / '.claude/settings.json').read_text())
+    assert settings['permissions']['deny'].count('Read(//**/.env*)') == 1

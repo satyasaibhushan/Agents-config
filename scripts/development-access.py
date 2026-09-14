@@ -35,6 +35,8 @@ settings = json.loads(path.read_text()) if path.exists() else {}
 permissions = settings.setdefault('permissions', {})
 permissions['allow'] = list(dict.fromkeys([v for v in permissions.get('allow', []) if v != 'mcp__*'] + policy['allow']))
 permissions['additionalDirectories'] = list(dict.fromkeys(permissions.get('additionalDirectories', []) + policy['directories']))
+# Secret-file deny rules use // anchors so they hold in every project, not just the cwd.
+permissions['deny'] = list(dict.fromkeys(permissions.get('deny', []) + policy['deny']))
 write(path, json.dumps(settings, indent=2)+'\n')
 path = home / '.codex/config.toml'
 content = path.read_text() if path.exists() else ''

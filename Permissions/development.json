@@ -20,5 +20,12 @@
     "mcp__db-devbox",
     "mcp__es-devbox"
   ],
+  "deny": [
+    "Read(//**/.env*)",
+    "Read(//**/*.key)",
+    "Read(//**/*.pem)",
+    "Read(//**/config/secrets.json)",
+    "Read(//**/*.log)"
+  ],
   "network_access": true
 }

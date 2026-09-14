@@ -159,7 +159,8 @@ Provider instruction files render as the concatenation of the active profile's
 ## Development permissions
 
 `Permissions/development.json` owns the approved development tool and directory
-profile. Apply it with `python3 scripts/development-access.py` after selecting a
+profile, plus the `Read` deny rules that keep secret files (`.env*`, keys, certs)
+out of the agent's context. Apply it with `python3 scripts/development-access.py` after selecting a
 devbox profile. It preserves unrelated settings, renders instructions, and links
 missing skills through the existing reconciler.
 
