@@ -36,16 +36,23 @@ permissions = settings.setdefault('permissions', {})
 permissions['allow'] = list(dict.fromkeys([v for v in permissions.get('allow', []) if v != 'mcp__*'] + policy['allow']))
 permissions['additionalDirectories'] = list(dict.fromkeys(permissions.get('additionalDirectories', []) + policy['directories']))
 # Secret-file deny rules use // anchors so they hold in every project, not just the cwd.
-permissions['deny'] = list(dict.fromkeys(permissions.get('deny', []) + policy['deny']))
+deny_rules = ['Read(//'+glob+')' for glob in policy['deny_read']]
+permissions['deny'] = list(dict.fromkeys(permissions.get('deny', []) + deny_rules))
 write(path, json.dumps(settings, indent=2)+'\n')
 path = home / '.codex/config.toml'
 content = path.read_text() if path.exists() else ''
-# Preserve unrelated tables and top-level choices. Only manage the workspace sandbox.
-sandbox = tomllib.loads(content).get('sandbox_workspace_write', {})
-sandbox.update(writable_roots=policy['directories'], network_access=policy['network_access'])
+# Preserve unrelated tables and top-level choices. Only manage the development permissions
+# profile. Codex rejects a profile combined with sandbox_mode or [sandbox_workspace_write],
+# so those legacy keys are dropped; the profile carries the writable roots and network flag.
 content = re.sub(r'(?ms)^\[sandbox_workspace_write\]\s*\n.*?(?=^\[|\Z)', '', content)
+content = re.sub(r'(?ms)^\[permissions\.development(\.[a-z_]+)?\]\s*\n.*?(?=^\[|\Z)', '', content)
+content = re.sub(r'(?m)^(sandbox_mode|default_permissions)\s*=.*\n', '', content)
 serialize = api['load_genmod']().toml_value
-content += '\n[sandbox_workspace_write]\n'+''.join(k+' = '+serialize(v)+'\n' for k,v in sandbox.items())
+filesystem = {**{d: 'write' for d in policy['directories']}, **{'/'+glob: 'deny' for glob in policy['deny_read']}}
+content = 'default_permissions = "development"\n' + content.rstrip('\n') + '\n'
+content += '\n[permissions.development]\nextends = ":workspace"\n'
+content += '\n[permissions.development.filesystem]\n' + ''.join(json.dumps(k)+' = '+serialize(v)+'\n' for k, v in filesystem.items())
+content += '\n[permissions.development.network]\nenabled = '+serialize(policy['network_access'])+'\n'
 write(path, content)
 print('Applied canonical development permissions for', profile_name)
 # Reuse the canonical reconciler for provider instructions and skill discovery.

@@ -159,8 +159,11 @@ Provider instruction files render as the concatenation of the active profile's
 ## Development permissions
 
 `Permissions/development.json` owns the approved development tool and directory
-profile, plus the `Read` deny rules that keep secret files (`.env*`, keys, certs)
-out of the agent's context. Apply it with `python3 scripts/development-access.py` after selecting a
+profile, plus the `deny_read` globs that keep secret files (`.env*`, keys, certs)
+out of the agent's context. Claude Code gets them as `Read(//glob)` deny rules;
+Codex gets a `development` permissions profile (`default_permissions`), which
+replaces `sandbox_mode` and `[sandbox_workspace_write]` and needs codex-cli
+0.154 or later to enforce the read denies. Apply it with `python3 scripts/development-access.py` after selecting a
 devbox profile. It preserves unrelated settings, renders instructions, and links
 missing skills through the existing reconciler.
 

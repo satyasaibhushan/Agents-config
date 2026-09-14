@@ -18,8 +18,15 @@ def test_development_apply_preserves_other_settings(tmp_path):
     result = tomllib.loads(config.read_text())
     assert result['model'] == 'existing'
     assert result['mcp_servers']['existing']['command'] == 'existing'
-    assert result['sandbox_workspace_write']['exclude_tmpdir_env_var'] is True
-    assert result['sandbox_workspace_write']['network_access'] is True
+    # A permissions profile replaces the legacy sandbox table; codex rejects mixing them.
+    assert 'sandbox_workspace_write' not in result
+    assert result['default_permissions'] == 'development'
+    profile = result['permissions']['development']
+    assert profile['extends'] == ':workspace'
+    assert profile['filesystem'][str(tmp_path / 'Agents')] == 'write'
+    assert profile['filesystem']['/**/.env*'] == 'deny'
+    assert profile['network']['enabled'] is True
+    assert list(result['permissions']) == ['development']
     policy = json.loads((tmp_path / '.config/agents-config/development.json').read_text())
     assert str(tmp_path / 'Agents') in policy['directories']
     assert 'Bash' in policy['allow']
