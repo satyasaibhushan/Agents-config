@@ -48,7 +48,10 @@ content = re.sub(r'(?ms)^\[sandbox_workspace_write\]\s*\n.*?(?=^\[|\Z)', '', con
 content = re.sub(r'(?ms)^\[permissions\.development(\.[a-z_]+)?\]\s*\n.*?(?=^\[|\Z)', '', content)
 content = re.sub(r'(?m)^(sandbox_mode|default_permissions)\s*=.*\n', '', content)
 serialize = api['load_genmod']().toml_value
-filesystem = {**{d: 'write' for d in policy['directories']}, **{'/'+glob: 'deny' for glob in policy['deny_read']}}
+# Linux codex expands deny globs before sandbox start and rejects root-anchored ones,
+# so each glob is anchored under every managed directory.
+filesystem = {d: 'write' for d in policy['directories']}
+filesystem.update({d+'/'+glob: 'deny' for d in policy['directories'] for glob in policy['deny_read']})
 content = 'default_permissions = "development"\n' + content.rstrip('\n') + '\n'
 content += '\n[permissions.development]\nextends = ":workspace"\n'
 content += '\n[permissions.development.filesystem]\n' + ''.join(json.dumps(k)+' = '+serialize(v)+'\n' for k, v in filesystem.items())
