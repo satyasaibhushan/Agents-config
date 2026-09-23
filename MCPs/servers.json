@@ -18,31 +18,63 @@
       }
     },
     "db-mcp": {
+      "platforms": ["darwin"],
       "clients": ["cursor", "claude-code", "claude-desktop", "codex"],
       "profiles": ["mac-admin", "devbox-admin", "devbox-agent"],
       "security": "reads shared databases via profiles",
-      "requires": {"paths": ["${CODE_ROOT}/Personal/DB-MCP/.venv/bin/db-mcp"]},
-      "setup": "clone DB-MCP under <code root>/Personal and create its .venv",
+      "requires": {
+        "env": ["DB_MCP_HTTP_TOKEN"],
+        "paths": [
+          "${CODE_ROOT}/Personal/DB-MCP/.venv/bin/db-mcp",
+          "${HOME}/Library/LaunchAgents/com.db-mcp.http.plist"
+        ]
+      },
+      "setup": "clone DB-MCP under <code root>/Personal, create its .venv, run scripts/install-launchd.sh, and copy ~/.db-access/http-token into DB_MCP_HTTP_TOKEN",
       "config": {
-        "type": "stdio",
+        "type": "http",
+        "url": "http://127.0.0.1:7718/mcp",
+        "headers": {
+          "Authorization": "Bearer ${DB_MCP_HTTP_TOKEN}"
+        }
+      },
+      "codex": {
+        "http_headers": {
+          "Authorization": "Bearer ${DB_MCP_HTTP_TOKEN}"
+        }
+      },
+      "claude-desktop": {
         "command": "${CODE_ROOT}/Personal/DB-MCP/.venv/bin/db-mcp",
         "args": [],
         "env": {}
       }
     },
     "elasticsearch": {
+      "platforms": ["darwin"],
       "clients": ["cursor", "claude-code", "claude-desktop", "codex"],
       "security": "policy-enforced Elasticsearch access via named profiles",
       "requires": {
         "executables": ["uv"],
+        "env": ["ES_MCP_HTTP_TOKEN"],
         "paths": [
           "${CODE_ROOT}/Personal/ES-MCP/pyproject.toml",
-          "${HOME}/.es-access/profiles.yaml"
+          "${HOME}/.es-access/profiles.yaml",
+          "${HOME}/Library/LaunchAgents/com.es-mcp.http.plist"
         ]
       },
-      "setup": "clone ES-MCP under <code root>/Personal, run uv sync, and configure ~/.es-access",
+      "setup": "clone ES-MCP under <code root>/Personal, run uv sync, configure ~/.es-access, run scripts/install-launchd.sh, and copy ~/.es-access/http-token into ES_MCP_HTTP_TOKEN",
       "config": {
-        "type": "stdio",
+        "type": "http",
+        "url": "http://127.0.0.1:7719/mcp",
+        "headers": {
+          "Authorization": "Bearer ${ES_MCP_HTTP_TOKEN}"
+        }
+      },
+      "codex": {
+        "http_headers": {
+          "Authorization": "Bearer ${ES_MCP_HTTP_TOKEN}"
+        }
+      },
+      "claude-desktop": {
         "command": "uv",
         "args": [
           "--directory",
@@ -139,9 +171,12 @@
         "executables": ["node"],
         "paths": ["${CODE_ROOT}/Personal/devdock/packages/mcp/dist/index.js"]
       },
-      "setup": "clone devdock under <code root>/Personal and build packages/mcp",
+      "setup": "clone devdock under <code root>/Personal, build packages/mcp, and install the daemon with packages/daemon/launchd/install.sh",
       "config": {
-        "type": "stdio",
+        "type": "http",
+        "url": "http://127.0.0.1:7717/mcp/rw"
+      },
+      "claude-desktop": {
         "command": "node",
         "args": [
           "${CODE_ROOT}/Personal/devdock/packages/mcp/dist/index.js"
