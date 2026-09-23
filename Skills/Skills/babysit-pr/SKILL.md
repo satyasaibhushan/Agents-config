@@ -30,6 +30,11 @@ left and every check is green, without letting the PR grow.
 7. Repeat until Copilot has no unresolved actionable comments and all checks
    pass. Then report: PR URL, checks green, review clear.
 
+A Copilot review overview that says "Approval recommended" means the review
+is clear: stop there. Low-severity findings, including ones listed under
+"Previously missed", are not actionable; do not fix them or re-request a
+review for them.
+
 ## Guardrails
 
 - Do not let review feedback expand the PR beyond the user's original goal.
