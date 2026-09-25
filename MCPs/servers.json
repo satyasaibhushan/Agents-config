@@ -20,7 +20,7 @@
     "db-mcp": {
       "platforms": ["darwin"],
       "clients": ["cursor", "claude-code", "claude-desktop", "codex"],
-      "profiles": ["mac-admin", "devbox-admin", "devbox-agent"],
+      "profiles": ["mac-admin", "devbox-admin", "wspace-admin", "devbox-agent"],
       "security": "reads shared databases via profiles",
       "requires": {
         "env": ["DB_MCP_HTTP_TOKEN"],
@@ -87,7 +87,7 @@
     },
     "new-relic": {
       "clients": ["cursor", "claude-code", "claude-desktop", "codex"],
-      "profiles": ["mac-admin", "devbox-admin", "devbox-agent"],
+      "profiles": ["mac-admin", "devbox-admin", "wspace-admin", "devbox-agent"],
       "security": "external service, sends queries to New Relic",
       "requires": {
         "executables": ["npx"],
@@ -123,7 +123,7 @@
     },
     "jira-attachments": {
       "clients": ["cursor", "claude-code", "claude-desktop", "codex"],
-      "profiles": ["mac-admin", "devbox-admin", "devbox-agent"],
+      "profiles": ["mac-admin", "devbox-admin", "wspace-admin", "devbox-agent"],
       "security": "reads Jira, downloads attachments locally",
       "requires": {
         "executables": ["python3"],

@@ -34,6 +34,14 @@ profiles:
     fragments: [base.md, devbox.md]
     mcps: default-allow
     skills: default-allow
+  wspace-admin:
+    platform: linux
+    mode: read-write
+    code_root: ~/Code
+    git_email: satyasaibhushan@gmail.com
+    fragments: [base.md, wspace.md]
+    mcps: default-allow
+    skills: default-allow
   devbox-agent:
     platform: linux
     mode: read-only
