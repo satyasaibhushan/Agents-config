@@ -233,6 +233,7 @@
       ],
       "profiles": [
         "devbox-admin",
+        "wspace-admin",
         "devbox-agent"
       ],
       "requires": {
@@ -260,6 +261,7 @@
       ],
       "profiles": [
         "devbox-admin",
+        "wspace-admin",
         "devbox-agent"
       ],
       "requires": {
