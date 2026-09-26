@@ -20,6 +20,7 @@ Inspect the available tool schemas for exact arguments.
 | run | Execute a command in the pod and obtain its exit result |
 | logs / wait | Read output and wait for readiness or a known condition |
 | operation_status | Check completion of a durable operation |
+| instances / move_plan / move | List linked machines, preview and move a deployment between them |
 
 An `exec` acknowledgment only proves command submission. Check completion and exit status before claiming success.
 
@@ -28,6 +29,19 @@ An `exec` acknowledgment only proves command submission. Check completion and ex
 3. If a changed repository's pod is absent or purged, deploy it and start development.
 4. Unchanged dependencies without development pods use the environment's UAT-US fallback. If UI is needed, deploy and start the relevant UI too.
 5. Do not routinely purge or restart healthy workloads. If DevDock fails, report the operation ID and useful error to the user. Do not bypass it with direct infrastructure changes.
+
+## Machines
+
+DevDock may be linked across machines, such as the laptop and a Linux workspace. `instances` lists them with their online and auth status. Every tool takes an optional `instance` UUID; omit it for the machine the MCP runs on. Each machine has its own checkout, and linking copies no code or `.env` files: a deploy or start builds from the target machine's checkout.
+
+Each deployment is claimed by one machine. Run lifecycle actions, logs, and terminals on the owner. An action on another machine fails with "owned by instance"; do not retry it there. With more than one machine online, `replica_create` needs an explicit `instance`.
+
+Move a deployment only when the user asks for it on another machine:
+
+1. Run `move_plan` with the repository, workload, and target UUID. It returns the owner, whether it is reachable, whether a dev session is live, both checkouts' branch, commit, and dirty state, and the follow-up.
+2. Tell the user if the checkouts differ in branch or commit, or if the source checkout has uncommitted changes. The target runs its own code, so those changes do not move.
+3. If the owner is unreachable, the move takes the claim over. Confirm with the user that the owner is really gone first; a laptop that is only offline may still be running it.
+4. Run `move`. A reachable owner stops its dev session and releases the claim; the deployment stays. A live session then starts on the target, with build + start when the commits differ. Pass `followUp` only to override that choice. Track the returned operation with `operation_status`.
 
 ## Environment hours
 
