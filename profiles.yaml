@@ -34,12 +34,12 @@ profiles:
     fragments: [base.md, devbox.md]
     mcps: default-allow
     skills: default-allow
-  wspace-admin:
+  vmockbox-admin:
     platform: linux
     mode: read-write
     code_root: ~/Code
     git_email: satyasaibhushan@gmail.com
-    fragments: [base.md, wspace.md]
+    fragments: [base.md, vmockbox.md]
     mcps: default-allow
     skills: default-allow
   devbox-agent:
