@@ -304,6 +304,36 @@
           "es"
         ]
       }
+    },
+    "hindsight": {
+      "clients": [
+        "cursor",
+        "claude-code",
+        "codex"
+      ],
+      "platforms": [
+        "darwin"
+      ],
+      "profiles": [
+        "mac-admin"
+      ],
+      "requires": {
+        "paths": [
+          "${HOME}/.local/bin/hindsight-mcp",
+          "${HOME}/.local/bin/hindsight-auth-headers",
+          "${HOME}/.config/hindsight/mac-agents.token"
+        ]
+      },
+      "security": "Submits bounded feedback as the locally provisioned ingestion-key owner; reads no provider credentials",
+      "setup": "Run python3 scripts/install-hindsight.py; key entry is local and hidden",
+      "config": {
+        "command": "${HOME}/.local/bin/hindsight-mcp"
+      },
+      "claude-code": {
+        "type": "http",
+        "url": "https://hindsight.bhushan.fun/api/mcp",
+        "headersHelper": "${HOME}/.local/bin/hindsight-auth-headers"
+      }
     }
   }
 }

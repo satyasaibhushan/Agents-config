@@ -120,6 +120,10 @@ def json_config_for_client(servers, client, env):
         config.update(entry.get(client, {}))  # optional per-client override block
         config = substitute(config, env)
 
+        if "url" in entry.get(client, {}) and "command" not in entry.get(client, {}):
+            for key in ("command", "args", "env", "cwd"):
+                config.pop(key, None)
+
         if client == "cursor" and config.get("type") == "http":
             config.pop("type", None)
 

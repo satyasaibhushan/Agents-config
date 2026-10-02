@@ -150,6 +150,8 @@ further limit which discovery roots it uses via `skill_clients`; see
 schema-validated, portable (`${HOME}`/`${CODE_ROOT}`, no hardcoded paths), and
 scoped per platform/profile. See `MCPs/README.md`.
 
+Mac feedback setup, hub profiles, and runtime distribution: [HindSight](MCPs/hindsight/README.md).
+
 ## Instructions
 
 Provider instruction files render as the concatenation of the active profile's

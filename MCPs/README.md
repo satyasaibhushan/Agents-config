@@ -94,3 +94,9 @@ commands, paths, and environment variables exist. On a trusted single-user
 Devbox, both Unix accounts may read one group-owned credential file; use
 least-privilege, preferably read-only service credentials because either
 account can exercise their granted scope.
+
+## HindSight
+
+Mac-only feedback integration uses a separate owner-only key file, never
+`mcp.env` or literal resolved headers. See [setup and runtime](hindsight/README.md).
+The dedicated installer also covers existing hub profiles and OpenCode.
