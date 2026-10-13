@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install the Mac feedback runtime and only its entries; never open the key."""
+"""Install the feedback runtime and only its entries; never open the key."""
 import argparse
 from datetime import datetime, timezone
 import importlib.util
@@ -157,7 +157,28 @@ def config_paths(home):
     return targets
 
 
+def load_apply():
+    spec = importlib.util.spec_from_file_location('reconcile', ROOT / 'scripts/apply.py')
+    apply = importlib.util.module_from_spec(spec); spec.loader.exec_module(apply)
+    return apply
+
+
+def active_profile(apply, home):
+    # servers.json owns which profiles get HindSight; the installer follows it.
+    name = apply.load_local_config(home).get('profile')
+    allowed = json.loads((ROOT / 'MCPs/servers.json').read_text())['servers']['hindsight']['profiles']
+    if name not in allowed:
+        raise ValueError('HindSight is enabled only for profiles: ' + ', '.join(allowed))
+    profile = apply.load_profiles()[name]
+    platform = 'linux' if sys.platform.startswith('linux') else sys.platform
+    if profile.get('platform') != platform:
+        raise ValueError('Profile ' + name + ' is not for this platform')
+    return profile
+
+
 def install(home, instructions=False):
+    apply = load_apply()
+    profile = active_profile(apply, home)
     binpath = home / '.local/bin'; mkdir(binpath)
     write(binpath / 'save-hindsight-token', (SOURCE / 'save-token.py').read_text(), 0o700)
     keydir = home / '.config/hindsight'
@@ -205,9 +226,6 @@ def install(home, instructions=False):
         write(path,new)
     print('HindSight runtime installed; registered ' + str(len(config_paths(home))) + ' profiles; changed ' + str(len(updates)) + ' configs. Key contents never opened.')
     if instructions:
-        spec = importlib.util.spec_from_file_location('reconcile', ROOT / 'scripts/apply.py')
-        apply = importlib.util.module_from_spec(spec); spec.loader.exec_module(apply)
-        profile = apply.load_profiles()['mac-admin']
         targets, default = apply.load_instruction_targets()
         targets['opencode'] = {'path':'~/.config/opencode/AGENTS.md'}
         for suffix in ('zai', 'copilot', 'cursor'):
@@ -237,7 +255,6 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--instructions', action='store_true', help='sync only missing or unchanged previous instruction renders')
     args = parser.parse_args()
-    if sys.platform != 'darwin': raise ValueError('This registration is restricted to the Mac account')
     os.umask(0o077)
     install(Path.home(),args.instructions)
 

@@ -81,6 +81,9 @@ INSTRUCTIONS_ROOT = CONFIG_ROOT / "Instructions"
 INSTRUCTIONS_MANIFEST = INSTRUCTIONS_ROOT / "instructions.yaml"
 
 MCP_CLIENTS = ["cursor", "claude-code", "claude-desktop", "codex"]
+# Claude Desktop ships for macOS only; on Linux its config path is never read,
+# so apply neither plans nor writes it there.
+MCP_CLIENT_PLATFORMS = {"claude-desktop": {"darwin"}}
 SKILL_AGENTS = {
     "agents": ".agents/skills",
     "claude-code": ".claude/skills",
@@ -123,13 +126,17 @@ def load_genmod():
     return mod
 
 
-def mcp_config_paths(home):
-    return {
+def mcp_config_paths(home, platform=None):
+    paths = {
         "cursor": home / ".cursor/mcp.json",
         "claude-code": home / ".claude.json",
         "claude-desktop": home / "Library/Application Support/Claude/claude_desktop_config.json",
         "codex": home / ".codex/config.toml",
     }
+    if platform is None:
+        return paths
+    return {client: path for client, path in paths.items()
+            if platform in MCP_CLIENT_PLATFORMS.get(client, {platform})}
 
 
 # ---------------------------------------------------------------- secrets
@@ -270,9 +277,10 @@ def partition_servers(genmod, servers, profile, platform, env):
     return in_scope, out
 
 
-def plan_mcps(genmod, servers, env, home, ignore=frozenset()):
-    """-> {name: {client: cell}} where cell = {state, live, desired}."""
-    paths = mcp_config_paths(home)
+def plan_mcps(genmod, servers, env, home, ignore=frozenset(), platform=None):
+    """-> {name: {client: cell}} where cell = {state, live, desired}.
+    live_all holds only the clients available on platform (all when None)."""
+    paths = mcp_config_paths(home, platform)
     live_all = {client: read_live_mcps(client, path) for client, path in paths.items()}
 
     items = {}
@@ -284,7 +292,7 @@ def plan_mcps(genmod, servers, env, home, ignore=frozenset()):
     for name in sorted(names, key=str.lower):
         entry = servers.get(name)
         cells = {}
-        for client in MCP_CLIENTS:
+        for client in live_all:
             if name in MCP_IGNORE.get(client, set()):
                 continue  # app-managed; write-back still round-trips it untouched
             live = live_all[client].get(name)
@@ -1493,7 +1501,7 @@ def final_mcp_state(genmod, new_servers, env, live_all, resolutions, plan_items)
     Skipped drift keeps its live value; everything else follows canonical —
     which is exactly where promote ripple shows up on previously in-sync cells."""
     final = {}
-    for client in MCP_CLIENTS:
+    for client in live_all:
         state = dict(live_all[client])
         for name, entry in new_servers.items():
             desired = desired_mcp(genmod, name, entry, client, env)
@@ -1564,7 +1572,7 @@ def backup(path, home, stamp):
 def write_mcp_configs(final, live_all, home, genmod, stamp):
     paths = mcp_config_paths(home)
     changed = []
-    for client in MCP_CLIENTS:
+    for client in final:
         if norm(final[client]) == norm(live_all[client]):
             continue
         path = paths[client]
@@ -1816,7 +1824,8 @@ def main():
     instr_items = {}
     if in_scope("mcps"):
         mcp_items, live_all = plan_mcps(genmod, servers_in_scope, env, home,
-                                        ignore=out_of_scope)
+                                        ignore=out_of_scope,
+                                        platform=args.platform)
         if genmod.MISSING_PLACEHOLDERS:
             names = ", ".join(sorted(genmod.MISSING_PLACEHOLDERS))
             message = (f"unresolved placeholder(s): {names} — add them to "
@@ -1844,7 +1853,7 @@ def main():
 
     print(f"profile: {profile['name']} ({args.platform}, "
           f"{'read-only' if read_only else 'read-write'})")
-    mcp_drift = print_matrix("MCP DRIFT PLAN", mcp_items, MCP_CLIENTS) \
+    mcp_drift = print_matrix("MCP DRIFT PLAN", mcp_items, list(live_all)) \
         if in_scope("mcps") else {}
     if in_scope("mcps") and out_of_scope:
         for name in sorted(out_of_scope, key=str.lower):
@@ -1893,7 +1902,7 @@ def main():
         if in_scope("instructions") else ([], [])
     print("\nEFFECT PREVIEW")
     any_change = False
-    for client in MCP_CLIENTS:
+    for client in final:
         before, after = live_all[client], final[client]
         for name in sorted(set(before) | set(after), key=str.lower):
             old, new = before.get(name), after.get(name)

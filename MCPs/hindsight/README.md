@@ -1,7 +1,8 @@
 # HindSight on the Mac
 
 Canonical endpoint: `https://hindsight.bhushan.fun/api/mcp`.
-The `mac-admin` profile registers the three default clients in `servers.json`.
+The `mac-admin` and `vmockbox-admin` profiles register the three default clients
+in `servers.json`; the installer runs only for profiles listed there.
 The dedicated installer extends that definition to existing private hub profiles
 and OpenCode. No remote account is configured by this installer.
 

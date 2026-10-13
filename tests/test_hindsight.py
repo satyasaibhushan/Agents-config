@@ -45,13 +45,21 @@ class FeedbackSetupTest(unittest.TestCase):
         with self.assertRaises(ValueError): self.setup.write(link,'replacement')
         self.assertEqual(target.read_text(),'preserve')
 
-    def test_definition_is_mac_only_and_has_one_transport(self):
+    def test_definition_is_scoped_and_has_one_transport(self):
         spec=importlib.util.spec_from_file_location('generator',ROOT/'MCPs/scripts/generate-mcps.py')
         gen=importlib.util.module_from_spec(spec);spec.loader.exec_module(gen)
         entry=json.loads((ROOT/'MCPs/servers.json').read_text())['servers']['hindsight']
-        self.assertEqual(entry['profiles'],['mac-admin'])
-        self.assertEqual(entry['platforms'],['darwin'])
+        self.assertEqual(entry['profiles'],['mac-admin','vmockbox-admin'])
+        self.assertEqual(entry['platforms'],['darwin','linux'])
         for client in entry['clients']:
             if client=='codex': result=gen.codex_server_config(entry,{'HOME':str(self.home)})
             else: result=gen.json_config_for_client({'hindsight':entry},client,{'HOME':str(self.home)})['mcpServers']['hindsight']
             self.assertEqual(result,self.setup.registration(self.home,client))
+
+    def test_installer_refuses_profiles_outside_the_definition(self):
+        apply=self.setup.load_apply()
+        config=self.home/'.config/agents-config';config.mkdir(parents=True)
+        (config/'config.json').write_text('{"profile":"devbox-agent"}')
+        with self.assertRaises(ValueError): self.setup.active_profile(apply,self.home)
+        (config/'config.json').write_text('{}')
+        with self.assertRaises(ValueError): self.setup.active_profile(apply,self.home)

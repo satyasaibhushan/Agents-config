@@ -939,6 +939,17 @@ class McpScopeTest(ApplyTestCase):
                                         ignore={"mac-only"})
         self.assertNotIn("mac-only", items)
 
+    def test_linux_plan_never_targets_claude_desktop(self):
+        servers = {"tool": {"clients": ["claude-code", "claude-desktop"],
+                            "config": {"command": "tool"}}}
+        items, live_all = self.apply.plan_mcps(self.genmod, servers, {}, self.home,
+                                               platform="linux")
+        self.assertNotIn("claude-desktop", live_all)
+        self.assertEqual(set(items["tool"]), {"claude-code"})
+        items, _ = self.apply.plan_mcps(self.genmod, servers, {}, self.home,
+                                        platform="darwin")
+        self.assertEqual(set(items["tool"]), {"claude-code", "claude-desktop"})
+
 
 class StateDirTest(ApplyTestCase):
     def test_backup_lands_in_home_state_dir(self):

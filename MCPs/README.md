@@ -97,6 +97,6 @@ account can exercise their granted scope.
 
 ## HindSight
 
-Mac-only feedback integration uses a separate owner-only key file, never
+Feedback integration (mac-admin, vmockbox-admin) uses a separate owner-only key file, never
 `mcp.env` or literal resolved headers. See [setup and runtime](hindsight/README.md).
 The dedicated installer also covers existing hub profiles and OpenCode.

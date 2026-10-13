@@ -312,10 +312,12 @@
         "codex"
       ],
       "platforms": [
-        "darwin"
+        "darwin",
+        "linux"
       ],
       "profiles": [
-        "mac-admin"
+        "mac-admin",
+        "vmockbox-admin"
       ],
       "requires": {
         "paths": [
