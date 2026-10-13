@@ -1652,10 +1652,12 @@ def memory_paths(home):
 def memory_leftovers(home):
     """Memory files still on disk; only the migrate-memories skill moves them."""
     files = sorted(home.glob(".claude/projects/*/memory/*"))
-    # Codex versions each memory store (memories, memories_v2, ...).
+    # Codex versions each memory store (memories, memories_v2, ...). Skysight
+    # is Chronicle's screen-activity log, kept on purpose, not agent memory.
     for codex in sorted(home.glob(".codex/memories*")):
         if codex.is_dir():
-            files += sorted(p for p in codex.rglob("*") if p.is_file())
+            files += sorted(p for p in codex.rglob("*") if p.is_file()
+                            and "skysight" not in p.relative_to(codex).parts)
     return [p for p in files if p.is_file()]
 
 

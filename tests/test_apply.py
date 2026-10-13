@@ -1084,7 +1084,10 @@ class MemoryTest(ApplyTestCase):
         note = self.write(".claude/projects/-repo/memory/rule.md", "x\n")
         summary = self.write(".codex/memories/memory_summary.md", "y\n")
         versioned = self.write(".codex/memories_v2/memory_summary.md", "z\n")
+        activity = self.write(
+            ".codex/memories/extensions/skysight/resources/window.md", "w\n")
         result = self.run_apply("plan")
+        self.assertNotIn(str(activity), result.stdout)
         self.assertIn("migrate-memories", result.stdout)
         for path in (note, summary, versioned):
             self.assertIn(str(path), result.stdout)
