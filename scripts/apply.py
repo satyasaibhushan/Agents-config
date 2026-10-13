@@ -195,14 +195,39 @@ def desired_mcp(genmod, name, entry, client, env):
     return generated["mcpServers"].get(name)
 
 
+def plan_header_files(genmod, servers, env):
+    """-> {path: content} for mcp-remote --header-file files that differ on
+    disk. A header file keeps the credential out of argv, where any process
+    listing shows it; the key itself still lives only in mcp.env."""
+    drift = {}
+    for entry in servers.values():
+        for raw_path, headers in entry.get("header_files", {}).items():
+            path = Path(genmod.substitute(raw_path, env))
+            content = "".join(f"{name}: {genmod.substitute(value, env)}\n"
+                              for name, value in sorted(headers.items()))
+            if not path.exists() or path.read_text() != content:
+                drift[path] = content
+    return drift
+
+
+def write_header_files(drift, home, stamp):
+    for path, content in drift.items():
+        backup(path, home, stamp)
+        private_mkdir(path.parent)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write(content)
+        os.chmod(path, 0o600)
+
+
 def norm(value):
     return json.dumps(value, sort_keys=True)
 
 
 # ---------------------------------------------------------------- MCP scope
 
-SERVER_KEYS = {"clients", "config", "platforms", "profiles", "requires",
-               "security", "setup"}
+SERVER_KEYS = {"clients", "config", "header_files", "platforms", "profiles",
+               "requires", "security", "setup"}
 REQUIRES_KEYS = {"executables", "env", "paths"}
 HARDCODED_PATHS = ("/Users/", "/home/", "/opt/homebrew")
 
@@ -237,7 +262,7 @@ def validate_servers(servers, profiles):
         errors += [f"{name}: requires: unknown key {key!r}"
                    for key in entry.get("requires", {})
                    if key not in REQUIRES_KEYS]
-        blob = json.dumps([entry.get("config"),
+        blob = json.dumps([entry.get("config"), entry.get("header_files"),
                            *(entry.get(c) for c in MCP_CLIENTS)])
         errors += [f"{name}: hardcoded path ({prefix}...) — use "
                    "${HOME} or ${CODE_ROOT}"
@@ -1858,6 +1883,10 @@ def main():
     if in_scope("mcps") and out_of_scope:
         for name in sorted(out_of_scope, key=str.lower):
             print(f"  out of scope: {name} — {out_of_scope[name]}")
+    header_drift = plan_header_files(genmod, servers_in_scope, env) \
+        if in_scope("mcps") else {}
+    for path in header_drift:
+        print(f"  header file stale: {path}")
     skill_drift = print_matrix("SKILL DRIFT PLAN", skill_items, list(SKILL_AGENTS)) \
         if in_scope("skills") else {}
     instr_drift = print_instructions_plan(instr_items) \
@@ -1866,7 +1895,7 @@ def main():
         print_memory_plan(memory_drift, memory_files)
 
     if not mcp_drift and not skill_drift and not instr_drift \
-            and not memory_drift and not memory_files:
+            and not memory_drift and not memory_files and not header_drift:
         print("\nEverything in sync. Nothing to do.")
         return
     if args.plan:
@@ -1947,6 +1976,9 @@ def main():
     for client in memory_drift:
         any_change = True
         print(f"  memory off: {client} ({memory_drift[client]})")
+    for path in header_drift:
+        any_change = True
+        print(f"  header file: write {path}")
     for name, clients, state in mcp_skipped + skill_skipped + instr_skipped:
         print(f"  skipped: {name} ({state} in {', '.join(clients)}) — will re-ask next apply")
     if not any_change:
@@ -1969,6 +2001,7 @@ def main():
         SERVERS_PATH.write_text(
             json.dumps({"version": 1, "servers": new_servers}, indent=2) + "\n")
     changed_clients = write_mcp_configs(final, live_all, home, genmod, stamp)
+    write_header_files(header_drift, home, stamp)
     applied_skills = apply_skill_ops(skill_ops, home, stamp)
     if new_skill_targets != skill_targets:
         backup(SKILLS_MANIFEST, home, stamp)
@@ -2005,6 +2038,8 @@ def main():
         print(f"  providers rewritten: {', '.join(changed_clients)}")
     for client in memory_drift:
         print(f"  memory off: {client}")
+    for path in header_drift:
+        print(f"  header file: {path}")
     for action, name, agent in applied_skills:
         print(f"  skill {action}: {name}" + (f" @ {agent}" if agent else ""))
     print(f"  backups: {state_dir(home) / 'backups' / stamp} (as needed)")
