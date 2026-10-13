@@ -104,7 +104,7 @@ pulling live edits back in. It runs fetch → plan → reconcile → preview →
 agents-config apply                    # full interactive apply
 agents-config plan                     # read-only drift report
 agents-config plan --json              # machine-readable matrix
-agents-config apply --only mcps        # or skills / instructions
+agents-config apply --only mcps        # or skills / instructions / memory
 ```
 
 - **Fetch/plan** normalizes every agent's live config into an item × provider
@@ -151,6 +151,17 @@ schema-validated, portable (`${HOME}`/`${CODE_ROOT}`, no hardcoded paths), and
 scoped per platform/profile. See `MCPs/README.md`.
 
 Mac feedback setup, hub profiles, and runtime distribution: [HindSight](MCPs/hindsight/README.md).
+
+## Memory
+
+Built-in agent memory is off on every profile: corrections go into code,
+tests, skills, or instructions (the "Corrections" ladder in
+`Instructions/fragments/base.md`), not per-machine notes. Apply sets
+`autoMemoryEnabled: false` in `~/.claude/settings.json` and
+`[features] memories = false` in `~/.codex/config.toml`, preserving every
+other key, and always overwrites drift there. Plan also lists leftover memory
+files (`~/.claude/projects/*/memory/`, `~/.codex/memories/`); apply never
+removes them. Run the `migrate-memories` skill to triage and archive them.
 
 ## Instructions
 

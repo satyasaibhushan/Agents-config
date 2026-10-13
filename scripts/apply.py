@@ -50,7 +50,7 @@ Usage (via scripts/agents-config, which picks a Python >= 3.11):
   agents-config apply              interactive reconcile + apply
   agents-config plan               print the drift matrix and exit (read-only)
   agents-config plan --json        machine-readable plan
-  agents-config apply --only mcps  limit scope (or: skills / instructions)
+  agents-config apply --only mcps  limit scope (or: skills / instructions / memory)
 
 --home and --platform are test seams: they retarget every home-relative path
 and the platform check without touching the real home. The bare --plan flag is
@@ -1548,6 +1548,10 @@ def backup(path, home, stamp):
     backed-up provider configs carry resolved secrets)."""
     if path.exists() or path.is_symlink():
         dest = state_dir(home) / "backups" / stamp / str(path).lstrip("/")
+        # One run can write a file twice (codex config: MCPs, then memory);
+        # the first copy is the pre-run original, so keep it.
+        if dest.exists() or dest.is_symlink():
+            return
         private_mkdir(dest.parent)
         if path.is_dir() and not path.is_symlink():
             shutil.copytree(path, dest, symlinks=True)
@@ -1631,9 +1635,95 @@ def apply_skill_ops(ops, home, stamp):
     return applied
 
 
+# ---------------------------------------------------------------- memory
+
+# Built-in agent memory stays off on every profile: a correction belongs in
+# architecture, a test, a skill, or an instruction (base.md "Corrections"),
+# not in per-machine notes nobody reviews. Off is policy, not a reconcile
+# choice, so drift here is always overwritten.
+
+def memory_paths(home):
+    return {
+        "claude-code": home / ".claude/settings.json",
+        "codex": home / ".codex/config.toml",
+    }
+
+
+def memory_leftovers(home):
+    """Memory files still on disk; only the migrate-memories skill moves them."""
+    files = sorted(home.glob(".claude/projects/*/memory/*"))
+    codex = home / ".codex/memories"
+    if codex.is_dir():
+        files += sorted(p for p in codex.rglob("*") if p.is_file())
+    return [p for p in files if p.is_file()]
+
+
+def plan_memory(home):
+    """-> {client: path} for each client whose memory switch is not off."""
+    paths = memory_paths(home)
+    drift = {}
+    claude = paths["claude-code"]
+    settings = json.loads(claude.read_text()) if claude.exists() else {}
+    if settings.get("autoMemoryEnabled") is not False:
+        drift["claude-code"] = claude
+    codex = paths["codex"]
+    config = tomllib.loads(codex.read_text()) if codex.exists() else {}
+    if config.get("features", {}).get("memories") is not False:
+        drift["codex"] = codex
+    return drift
+
+
+def codex_memory_off(content):
+    """Set `memories = false` in [features], preserving everything else."""
+    import re
+    table = re.search(r"(?m)^\[features\][ \t]*\n", content)
+    if table is None:
+        sep = "\n\n" if content.strip() else ""
+        return content.rstrip("\n") + sep + "[features]\nmemories = false\n"
+    start = table.end()
+    following = re.search(r"(?m)^\[", content[start:])
+    end = start + following.start() if following else len(content)
+    body = content[start:end]
+    if re.search(r"(?m)^memories\s*=", body):
+        body = re.sub(r"(?m)^memories\s*=.*$", "memories = false", body)
+    else:
+        body = "memories = false\n" + body
+    return content[:start] + body + content[end:]
+
+
+def print_memory_plan(drift, leftovers):
+    print(f"\nMEMORY PLAN — {len(drift)} client(s) with memory on, "
+          f"{len(leftovers)} memory file(s) not migrated")
+    for client, path in drift.items():
+        print(f"  {client}: memory on ({path}) — apply turns it off")
+    if leftovers:
+        print("  leftover memory files: run the migrate-memories skill")
+        for path in leftovers:
+            print(f"    {path}")
+
+
+def write_memory_off(drift, stamp, home):
+    for client, path in drift.items():
+        backup(path, home, stamp)
+        private_mkdir(path.parent)
+        if client == "claude-code":
+            settings = json.loads(path.read_text()) if path.exists() else {}
+            settings["autoMemoryEnabled"] = False
+            path.write_text(json.dumps(settings, indent=2) + "\n")
+        else:
+            content = codex_memory_off(path.read_text() if path.exists() else "")
+            # A dotted `features.memories` key elsewhere would survive the table
+            # edit; refuse rather than report a switch that is still on.
+            if tomllib.loads(content).get("features", {}).get("memories") is not False:
+                sys.exit(f"error: could not turn off memories in {path}; edit it by hand")
+            path.write_text(content)
+        os.chmod(path, 0o600)
+
+
 # ---------------------------------------------------------------- main
 
-def emit_json_plan(mcp_items, skill_items, instr_items, secret_map, profile_name):
+def emit_json_plan(mcp_items, skill_items, instr_items, secret_map, profile_name,
+                   memory_drift=None, memory_files=None):
     def cells_out(items, mask_live):
         out = {}
         for name, cells in items.items():
@@ -1655,6 +1745,10 @@ def emit_json_plan(mcp_items, skill_items, instr_items, secret_map, profile_name
                        "source": cell["source"]}
             for provider, cell in instr_items.items()
         },
+        "memory": {
+            "enabled": sorted(memory_drift or {}),
+            "leftovers": [str(p) for p in memory_files or []],
+        },
     }, indent=2))
 
 
@@ -1672,7 +1766,7 @@ def parse_args(argv=None):
                         help="plan: show drift and exit (read-only); apply: reconcile")
     parser.add_argument("--plan", action="store_true", help="alias for the plan command")
     parser.add_argument("--json", action="store_true", help="with plan: JSON output")
-    parser.add_argument("--only", choices=["mcps", "skills", "instructions"],
+    parser.add_argument("--only", choices=["mcps", "skills", "instructions", "memory"],
                         help="limit scope")
     parser.add_argument("--profile", help="profile from profiles.yaml "
                         "(saved on apply; required on first run)")
@@ -1732,12 +1826,16 @@ def main():
         skill_items, canonical_skills = plan_skills(home, skill_targets, profile)
     if in_scope("instructions"):
         instr_items = plan_instructions(instr_targets, home, profile, default_source)
+    memory_drift, memory_files = ({}, [])
+    if in_scope("memory"):
+        memory_drift, memory_files = plan_memory(home), memory_leftovers(home)
 
     if args.plan and args.json:
         emit_json_plan(
             {n: c for n, c in mcp_items.items()
              if any(x["state"] != IN_SYNC for x in c.values())},
             skill_items, instr_items, secret_map, profile["name"],
+            memory_drift, memory_files,
         )
         return
 
@@ -1752,8 +1850,11 @@ def main():
         if in_scope("skills") else {}
     instr_drift = print_instructions_plan(instr_items) \
         if in_scope("instructions") else {}
+    if in_scope("memory"):
+        print_memory_plan(memory_drift, memory_files)
 
-    if not mcp_drift and not skill_drift and not instr_drift:
+    if not mcp_drift and not skill_drift and not instr_drift \
+            and not memory_drift and not memory_files:
         print("\nEverything in sync. Nothing to do.")
         return
     if args.plan:
@@ -1831,6 +1932,9 @@ def main():
             old, new = instr_targets.get(provider), new_instr_targets.get(provider)
             if old != new:
                 print(f"    {provider}: {old or '(untargeted)'} -> {new or '(untargeted)'}")
+    for client in memory_drift:
+        any_change = True
+        print(f"  memory off: {client} ({memory_drift[client]})")
     for name, clients, state in mcp_skipped + skill_skipped + instr_skipped:
         print(f"  skipped: {name} ({state} in {', '.join(clients)}) — will re-ask next apply")
     if not any_change:
@@ -1868,6 +1972,8 @@ def main():
     if new_instr_targets != instr_targets:
         backup(INSTRUCTIONS_MANIFEST, home, stamp)
         write_instruction_targets(new_instr_targets)
+    # After the MCP write: both rewrite ~/.codex/config.toml.
+    write_memory_off(memory_drift, stamp, home)
 
     print("\nSUMMARY")
     if norm(new_servers) != norm(servers):
@@ -1885,6 +1991,8 @@ def main():
         print(f"  instructions migrated: {provider} — removed {legacy}")
     if changed_clients:
         print(f"  providers rewritten: {', '.join(changed_clients)}")
+    for client in memory_drift:
+        print(f"  memory off: {client}")
     for action, name, agent in applied_skills:
         print(f"  skill {action}: {name}" + (f" @ {agent}" if agent else ""))
     print(f"  backups: {state_dir(home) / 'backups' / stamp} (as needed)")
