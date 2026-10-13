@@ -134,6 +134,25 @@ class McpPlanTest(ApplyTestCase):
             {"command": "proxy", "args": ["https://example.com/mcp"]},
         )
 
+    def test_header_files_keep_secret_out_of_args_and_track_drift(self):
+        servers = {"remote": {
+            "clients": ["claude-desktop"],
+            "header_files": {"${HOME}/h/remote": {"api-key": "${DEMO_KEY}"}},
+            "claude-desktop": {"command": "npx", "args": [
+                "mcp-remote", "--header-file", "${HOME}/h/remote"]},
+        }}
+        env = {**ENV, "HOME": str(self.home)}
+        desired = self.apply.desired_mcp(
+            self.genmod, "remote", servers["remote"], "claude-desktop", env)
+        self.assertNotIn(ENV["DEMO_KEY"], json.dumps(desired))
+
+        drift = self.apply.plan_header_files(self.genmod, servers, env)
+        path = self.home / "h/remote"
+        self.assertEqual(drift, {path: "api-key: secret-value-123\n"})
+        self.apply.write_header_files(drift, self.home, "stamp")
+        self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(self.apply.plan_header_files(self.genmod, servers, env), {})
+
     def test_codex_write_preserves_app_managed_http_transport(self):
         path = self.write(
             ".codex/config.toml",
