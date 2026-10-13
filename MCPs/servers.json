@@ -100,24 +100,24 @@
           "api-key": "${NEW_RELIC_API_KEY}"
         }
       },
+      "header_files": {
+        "${HOME}/.config/agents-config/headers/new-relic": {
+          "api-key": "${NEW_RELIC_API_KEY}"
+        }
+      },
       "codex": {
-        "command": "npx",
-        "args": [
-          "-y",
-          "mcp-remote",
-          "https://mcp.newrelic.com/mcp/",
-          "--header",
-          "api-key:${NEW_RELIC_API_KEY}"
-        ]
+        "http_headers": {
+          "api-key": "${NEW_RELIC_API_KEY}"
+        }
       },
       "claude-desktop": {
         "command": "npx",
         "args": [
           "-y",
-          "mcp-remote",
+          "mcp-remote@0.14.3",
           "https://mcp.newrelic.com/mcp/",
-          "--header",
-          "api-key:${NEW_RELIC_API_KEY}"
+          "--header-file",
+          "${HOME}/.config/agents-config/headers/new-relic"
         ]
       }
     },
