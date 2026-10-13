@@ -1033,5 +1033,70 @@ class CliTest(ApplyTestCase):
         self.assertIn("Reconciling apply", result.stdout)
 
 
+class MemoryTest(ApplyTestCase):
+    def run_apply(self, *args):
+        env = dict(os.environ, HOME=str(self.home))
+        return subprocess.run([
+            str(REPO / "scripts" / "agents-config"), *args, "--only", "memory",
+            "--profile", "mac-admin", "--home", str(self.home), "--platform", "darwin",
+        ], cwd=REPO, env=env, input="y\n", check=True, capture_output=True, text=True)
+
+    def test_missing_configs_count_as_memory_on(self):
+        self.assertEqual(set(self.apply.plan_memory(self.home)), {"claude-code", "codex"})
+
+    def test_explicit_true_is_drift_and_false_is_not(self):
+        self.write_json(".claude/settings.json", {"autoMemoryEnabled": True})
+        self.write(".codex/config.toml", "[features]\nmemories = false\n")
+        self.assertEqual(set(self.apply.plan_memory(self.home)), {"claude-code"})
+
+    def test_codex_switch_preserves_other_tables_and_features(self):
+        cases = [
+            "",
+            'model = "m"\n\n[mcp_servers.a]\ncommand = "a"\n',
+            "[features]\nhooks = true\n\n[mcp_servers.a]\ncommand = \"a\"\n",
+            "[features]\nmemories = true\nhooks = true\n",
+        ]
+        for before in cases:
+            after = tomllib.loads(self.apply.codex_memory_off(before))
+            self.assertIs(after["features"]["memories"], False, before)
+            original = tomllib.loads(before)
+            for key, value in original.items():
+                if key != "features":
+                    self.assertEqual(after[key], value, before)
+            for key, value in original.get("features", {}).items():
+                if key != "memories":
+                    self.assertEqual(after["features"][key], value, before)
+
+    def test_apply_turns_memory_off_and_keeps_settings(self):
+        self.write_json(".claude/settings.json", {"permissions": {"allow": ["Read"]}})
+        self.write(".codex/config.toml", 'model = "m"\n')
+        self.run_apply("apply")
+        settings = json.loads((self.home / ".claude/settings.json").read_text())
+        self.assertEqual(settings, {"permissions": {"allow": ["Read"]},
+                                    "autoMemoryEnabled": False})
+        config = tomllib.loads((self.home / ".codex/config.toml").read_text())
+        self.assertEqual(config, {"model": "m", "features": {"memories": False}})
+        self.assertEqual(self.apply.plan_memory(self.home), {})
+
+    def test_leftover_memory_files_are_reported_not_removed(self):
+        self.write_json(".claude/settings.json", {"autoMemoryEnabled": False})
+        self.write(".codex/config.toml", "[features]\nmemories = false\n")
+        note = self.write(".claude/projects/-repo/memory/rule.md", "x\n")
+        summary = self.write(".codex/memories/memory_summary.md", "y\n")
+        result = self.run_apply("plan")
+        self.assertIn("migrate-memories", result.stdout)
+        self.assertIn(str(note), result.stdout)
+        self.assertIn(str(summary), result.stdout)
+        self.assertTrue(note.exists() and summary.exists())
+
+    def test_second_backup_in_one_run_keeps_the_original(self):
+        path = self.write(".codex/config.toml", "original\n")
+        self.apply.backup(path, self.home, "stamp")
+        path.write_text("intermediate\n")
+        self.apply.backup(path, self.home, "stamp")
+        copy = self.apply.state_dir(self.home) / "backups/stamp" / str(path).lstrip("/")
+        self.assertEqual(copy.read_text(), "original\n")
+
+
 if __name__ == "__main__":
     unittest.main()

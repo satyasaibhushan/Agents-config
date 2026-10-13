@@ -86,6 +86,19 @@ that and say why.
 - Never discard, overwrite, stage, commit, or clean up unrelated existing
   changes.
 
+## Corrections
+
+Every time I correct you, think about how to eliminate that mistake
+entirely. In order of value:
+
+1. Eliminate it through better architecture or choice of data structures.
+2. Turn it into a lint rule or test so CI catches it.
+3. Turn it into a skill or instruction rule.
+4. Leave it for human review to catch (last resort).
+
+Built-in agent memory is off on purpose; never record a correction there.
+Apply the highest rung in scope; otherwise name it in one line at the end.
+
 ## Code
 
 - Extract when a decision or responsibility deserves an independent name and
@@ -132,6 +145,19 @@ Code is under `~/Code/backend/`, `~/Code/frontend/`, `~/Code/Personal/`.
 
 Backend work runs on my remote dev pod (devspace/devdock): edits sync
 instantly, but long commands must be detached or they die on timeout.
+Backend commands, tests, and dev data writes run in the pod only: no local
+`composer install` or vendor, no local runs against dev through tunnels. If
+another machine owns the deployment, move it with devdock instead.
+
+Keep API keys in a service's gitignored working `.env` after test runs; never
+strip them. `.env.example` lists names only, never values.
+
+New frontend repos replacing legacy ones: jobs-ui (admin) is
+`career-service-ui`, dashboard (student) is `candidate-dashboard-ui` (feature
+branches off `migration`), employer-ui is `org-ui`. Shared `@vmockinc/*`
+packages live in `ui-support`, pinned by consumers at a git SHA. Employer,
+org, CRM, and branding backend work is in `acs-org-management`; jobs in
+`acs-jobs-management`.
 
 `.agents/scripts/` in some repos holds read-only debugging tools, each with
 `--help`. Check there before hand-writing an investigation. Globally

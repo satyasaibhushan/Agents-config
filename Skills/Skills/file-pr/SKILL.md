@@ -67,8 +67,11 @@ needs headings to stay readable, it is probably too long.
 1. Run `git-pr <primary>` (zsh shell function): it pulls upstream's primary
    into the branch and pushes to origin. If the function is missing from your
    shell, say so; do not improvise the push.
-2. Conflicts from the pull mean stop and report; never resolve them silently
-   as part of filing.
+2. Resolve conflicts from the pull yourself wherever the change's stated
+   intent decides them: keep unrelated upstream hunks, rerun lint and tests
+   on the merged result, and note the resolution in one line of the PR body.
+   Stop only on a hunk that needs a product or ownership decision, and name
+   it. Still file every other requested PR.
 3. Create the PR into upstream's primary:
    `gh pr create --repo <upstream-owner>/<repo> --head <origin-owner>:<branch> --base <primary>`
 
@@ -76,7 +79,8 @@ needs headings to stay readable, it is probably too long.
 
 1. Run `git-uat` (zsh shell function): it creates `<branch>-uat`, merges
    `upstream/uat` into it, pushes it to origin, and returns to the original
-   branch. Same rules: missing function or conflicts mean stop and report.
+   branch. Same rules: a missing function means stop and report; resolve
+   conflicts as in Normal PR step 2.
 2. Create the PR from `<branch>-uat` into upstream's `uat`:
    `gh pr create --repo <upstream-owner>/<repo> --head <origin-owner>:<branch>-uat --base uat`
 

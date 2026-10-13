@@ -6,6 +6,9 @@ skills, code, collaboration, or tooling. Include a concise finding, its impact,
 and a concrete next step. Skip empty feedback, generic praise, and invented
 problems. Feedback failure must not block the requested task.
 
+When I correct you and the fix belongs outside the current task, submit it
+here with the rung from "Corrections" and the concrete change.
+
 Use a fresh request ID for each submission. Retry only an identical payload
 with the same ID; do not loop. Add a bounded task, repository, source/client,
 and outcome when useful. Never include credentials, personal data, transcripts,
