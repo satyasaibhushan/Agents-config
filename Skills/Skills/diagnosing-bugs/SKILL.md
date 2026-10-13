@@ -32,6 +32,8 @@ If the redacted output is not enough to diagnose the bug, say so and ask the use
 
 Spend disproportionate effort here. **Be aggressive. Be creative. Refuse to give up.**
 
+Early on, name the evidence that would split the hypotheses (server logs, environment access, deploy history). If the user can fetch it faster than you can rule things out, ask for it first: what you need, what it saves, and what it costs without it.
+
 ### Ways to construct one — try them in roughly this order
 
 1. **Failing test** at whatever seam reaches the bug — unit, integration, e2e.

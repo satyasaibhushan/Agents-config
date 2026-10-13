@@ -33,7 +33,7 @@ PROMPT="$ARTIFACT_DIR/prompt.md"
 # Write a self-contained prompt to $PROMPT, then run:
 codex exec \
   -C "$PWD" \
-  --full-auto \
+  -s workspace-write \
   - < "$PROMPT" > "$REPORT"
 ```
 

@@ -22,13 +22,14 @@ Inspect the available tool schemas for exact arguments.
 | operation_status | Check completion of a durable operation |
 | instances / move_plan / move | List linked machines, preview and move a deployment between them |
 
-An `exec` acknowledgment only proves command submission. Check completion and exit status before claiming success.
+An `exec` acknowledgment only proves command submission. Check completion and exit status before claiming success. Likewise an operation receipt or `RUNNING_MANAGED` is not completion: check `operation_status`, ready replicas with a stable restart count, and the mounted route. Prove sync by editing a file and reading it back in the pod, and check workload logs after adding a dependency.
 
-1. Inspect state and checkout before changing anything. Reuse healthy running development sessions.
+1. Inspect state and checkout before changing anything. Reuse healthy running development sessions. When the user says not to restart, adopt the running workload; do not `restart` or `build_start`.
 2. If the pod exists but development is stopped, start development only.
 3. If a changed repository's pod is absent or purged, deploy it and start development.
 4. Unchanged dependencies without development pods use the environment's UAT-US fallback. If UI is needed, deploy and start the relevant UI too.
 5. Do not routinely purge or restart healthy workloads. If DevDock fails, report the operation ID and useful error to the user. Do not bypass it with direct infrastructure changes.
+6. If a start hangs in building with no helm output, check that `lastContext.namespace` in the checkout's `.devspace/cache.yaml` matches the target namespace; a mismatch opens an interactive picker that waits forever.
 
 ## Machines
 
@@ -67,7 +68,7 @@ When verification is blocked by the off window:
 
 ## Routing and verification
 
-Run every changed repository in development. Set the relevant environment values to `saibhushan` so API calls reach that user's development pods; preserve unrelated values. Inspect actual network requests and pod logs. A personal frontend URL can still call UAT, so confirm the changed service handled the request.
+Run every changed repository in development. Set the relevant environment values to `saibhushan` so API calls reach that user's development pods; preserve unrelated values. Inspect actual network requests and pod logs. A personal frontend URL can still call UAT, so confirm the changed service handled the request. A passing `/auth` phase proves OIDC only, not that the service handled it.
 
 | Surface | Development | UAT-US |
 | --- | --- | --- |
