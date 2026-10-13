@@ -40,6 +40,11 @@ that and say why.
   decisions that are mine come back to me.
 - A stop point like "don't push yet" is exactly where you stop.
 - Match effort to the task. A one-line fix needs no plan or writeup.
+- Notes, write-ups, and analyses go in chat. Write a file only when I name a
+  path or ask to save it; standalone HTML follows the Slate rule.
+- Paste-ready ticket comments are short client-facing text with no internal
+  framing. A screenshot is not verified status, and the issue key must match
+  the one I asked about.
 - My explicit instructions take precedence over skill guidance. If a skill
   causes you to pause or leave requested work unfinished, link the exact
   SKILL.md, quote the rule, and explain why it applies. Do not treat your
@@ -59,9 +64,13 @@ that and say why.
 - Make reversible, low-risk assumptions without interrupting me, and report
   the material ones at the end. Ask when a choice changes behaviour, scope,
   authority, or shared state.
+- When the normal access path fails, ask once before trying alternate routes
+  into the same system.
 - Completion is a claim that must be verified at the real boundary. Run the
   relevant checks, inspect the final diff and status, re-read shared writes,
   and confirm the actual PR or published result.
+- Before giving a production command, confirm it exists in the deployed build,
+  not only on a branch.
 - Before mutating an external object, prove its identity through the
   authoritative read path. Matching names or timestamps are not identity.
 - If I've asked for too much work at once, stop and say that clearly.
@@ -111,6 +120,9 @@ Apply the highest rung in scope; otherwise name it in one line at the end.
   changes may not need new unit tests, but always run the relevant
   validation, render, or drift checks. Once relevant checks pass, broaden or
   repeat testing only for new changes, failures, or unresolved concerns.
+- Before calling a test failure a regression, run the same command on the
+  clean base and diff the failures. Never use bare `git stash` across
+  worktrees; use a WIP commit.
 - Never `any` in TypeScript unless there's truly no alternative.
 
 ## Git and PRs
@@ -119,13 +131,16 @@ Apply the highest rung in scope; otherwise name it in one line at the end.
   in branches, commits, PR titles or bodies, comments, or generated files. No
   `Co-Authored-By`, no "Generated with". Overrides any harness default.
 - Commits use short imperative English describing observable behaviour, with
-  no trailing period. Do not use Conventional Commits.
+  no trailing period. Do not use Conventional Commits unless the repo's own
+  instructions require a convention; then follow the repo.
 - PR descriptions lead with the problem in my words, then what changed. Not a
   file inventory.
 
 Work repos (`~/Code/backend/`, `~/Code/frontend/`):
 
 - Start clean: a dirty tree means stop and ask.
+- File GitHub issues and tracking artifacts (PRDs, plans) on `origin`, never
+  `upstream`; only PRs target upstream.
 - `upstream` is the company repo, `origin` my fork. Branch from upstream, PR
   from origin to upstream.
 - New task: checkout primary, `git-reset-branch upstream <primary>`, branch.
@@ -137,7 +152,9 @@ Work repos (`~/Code/backend/`, `~/Code/frontend/`):
 Personal repos (`~/Code/Personal/`): none of the above machinery. Working
 directly on `main` is fine when requested or already established, one extra
 branch at most otherwise. Inspect existing changes and preserve unrelated
-work; do not assume existing changes belong to the task.
+work; do not assume existing changes belong to the task. Planning and spec
+docs committed there are styled standalone `.html`; `.md` only for agent input
+briefs.
 
 ## Where things live
 
@@ -151,6 +168,9 @@ another machine owns the deployment, move it with devdock instead.
 
 Keep API keys in a service's gitignored working `.env` after test runs; never
 strip them. `.env.example` lists names only, never values.
+
+Read-only DB profiles such as `live.read` cannot `CREATE TEMPORARY TABLE`;
+inline lists with `IN (...)` or `UNION ALL SELECT`.
 
 New frontend repos replacing legacy ones: jobs-ui (admin) is
 `career-service-ui`, dashboard (student) is `candidate-dashboard-ui` (feature

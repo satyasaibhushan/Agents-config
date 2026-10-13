@@ -1652,9 +1652,10 @@ def memory_paths(home):
 def memory_leftovers(home):
     """Memory files still on disk; only the migrate-memories skill moves them."""
     files = sorted(home.glob(".claude/projects/*/memory/*"))
-    codex = home / ".codex/memories"
-    if codex.is_dir():
-        files += sorted(p for p in codex.rglob("*") if p.is_file())
+    # Codex versions each memory store (memories, memories_v2, ...).
+    for codex in sorted(home.glob(".codex/memories*")):
+        if codex.is_dir():
+            files += sorted(p for p in codex.rglob("*") if p.is_file())
     return [p for p in files if p.is_file()]
 
 

@@ -30,7 +30,7 @@ PROMPT="$ARTIFACT_DIR/prompt.md"
 # Write a self-contained prompt to $PROMPT, then run:
 codex exec \
   -C "$PWD" \
-  --full-auto \
+  -s workspace-write \
   - < "$PROMPT" > "$REPORT"
 ```
 
@@ -44,5 +44,22 @@ The prompt must be self-contained. Tell Codex:
 - What passing and failing behavior look like.
 - Not to disrupt the user's environment: no closing their apps, changing system settings, or acting on real accounts or data.
 - To write a concise final report with the steps taken, screenshot paths, observed behavior, and a pass/fail verdict.
+
+## App approval
+
+Computer use runs through Codex's own bridge, outside the shell sandbox, so `-s workspace-write` is enough. Tell Codex to drive apps with its computer-use tool; shell desktop control (AppleScript, `screencapture`, `open -a`) is sandbox-blocked.
+
+The bridge approves apps per Codex session, and `codex exec` cannot show that prompt, so the first run against a new app fails with "Computer Use was not approved to control <app>". Take the session id from the exec header, have the user add the app's bundle id to `~/.codex/computer-use/sessions/<session-id>.toml`:
+
+```toml
+[apps]
+allowed = ["app.zen-browser.zen"]
+```
+
+then resume, with options before `resume`:
+
+```bash
+codex exec -C "$PWD" -s workspace-write resume <session-id> - < "$ARTIFACT_DIR/continue.md" > "$REPORT"
+```
 
 If `codex` is not installed or the command fails, report the error and offer to verify the behavior directly instead.

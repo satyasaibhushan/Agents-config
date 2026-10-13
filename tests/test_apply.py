@@ -1083,11 +1083,12 @@ class MemoryTest(ApplyTestCase):
         self.write(".codex/config.toml", "[features]\nmemories = false\n")
         note = self.write(".claude/projects/-repo/memory/rule.md", "x\n")
         summary = self.write(".codex/memories/memory_summary.md", "y\n")
+        versioned = self.write(".codex/memories_v2/memory_summary.md", "z\n")
         result = self.run_apply("plan")
         self.assertIn("migrate-memories", result.stdout)
-        self.assertIn(str(note), result.stdout)
-        self.assertIn(str(summary), result.stdout)
-        self.assertTrue(note.exists() and summary.exists())
+        for path in (note, summary, versioned):
+            self.assertIn(str(path), result.stdout)
+            self.assertTrue(path.exists())
 
     def test_second_backup_in_one_run_keeps_the_original(self):
         path = self.write(".codex/config.toml", "original\n")

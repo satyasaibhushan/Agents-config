@@ -26,6 +26,8 @@ Search every replica and revision relevant to the window. Absence from one worke
 
 Before proposing a code or provider-endpoint change, extract the exact exception class, HTTP status, message, and provider response. Keep missing evidence explicit instead of inferring it from a wrapper exception.
 
+Structured logs often keep their text in attributes rather than `message`, so match the attribute fields (for example `filter_keys IS NOT NULL`). Logs UI links drop filters: share the NRQL with the message ID. A log line from a fallback path does not by itself confirm a leak.
+
 For CMC production shell access, use the established Copilot/ECS workflow. Do not suggest Kubernetes unless the user explicitly identifies Kubernetes.
 
 For error logs, use this filter:
