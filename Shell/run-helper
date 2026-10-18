@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Agent shells are non-interactive and skip shared.sh. scripts/install links
+# each git helper name in ~/.local/bin here, so the same function runs anyway.
+source=$0
+if [ -L "$source" ]; then
+    source=$(readlink "$source")
+fi
+. "$(dirname "$source")/shared.sh"
+"$(basename "$0")" "$@"

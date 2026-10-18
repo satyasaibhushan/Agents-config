@@ -98,3 +98,20 @@ kn sample
     assert result.stdout.splitlines() == [str(target), 'https://example.com/compare',
                                          'config use-context sample',
                                          'config set-context --current --namespace sample']
+
+
+def test_linked_helpers_run_shared_functions_without_interactive_shell(tmp_path):
+    checkout = tmp_path / 'checkout with spaces'
+    checkout.mkdir()
+    shutil.copy2(ROOT / 'Shell/run-helper', checkout / 'run-helper')
+    (checkout / 'shared.sh').write_text('git-pr() { printf "pr:%s" "$*"; }\n')
+    bin_dir = tmp_path / 'bin'
+    bin_dir.mkdir()
+    (bin_dir / 'git-uat').write_text('local script\n')
+    module.link_helpers(bin_dir, checkout / 'run-helper')
+    module.link_helpers(bin_dir, checkout / 'run-helper')
+    assert (bin_dir / 'git-uat').read_text() == 'local script\n'
+    result = subprocess.run(['sh', '-c', 'git-pr main'],
+                            env={**os.environ, 'PATH': str(bin_dir) + os.pathsep + os.environ['PATH']},
+                            capture_output=True, text=True, check=True)
+    assert result.stdout == 'pr:main'
