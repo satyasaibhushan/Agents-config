@@ -191,6 +191,11 @@ org, CRM, and branding backend work is in `acs-org-management`; jobs in
 `--help`. Check there before hand-writing an investigation. Globally
 gitignored; never commit or mention them anywhere the team can see.
 
+On the Mac, `vmock-vpn` (`~/Code/Personal/vmock-dev-utils/vpn/macos/`) runs
+OpenConnect rootless through ocproxy (`--script-tun`) and reconnects with the
+screen locked. Only GlobalProtect needs an unlocked session; try `vmock-vpn`
+before calling a VPN reconnect blocked.
+
 `~/Agents/Workflows/` holds specs for recurring ticket classes. Scan
 `INDEX.md` before ticket-shaped work. Fix stale workflows with the smallest
 delta, leave uncommitted, never push in that repo.
