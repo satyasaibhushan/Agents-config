@@ -51,6 +51,8 @@ Usage (via scripts/agents-config, which picks a Python >= 3.11):
   agents-config plan               print the drift matrix and exit (read-only)
   agents-config plan --json        machine-readable plan
   agents-config apply --only mcps  limit scope (or: skills / instructions / memory)
+  agents-config apply --sync       no prompts: overwrite drift that came from
+                                   canonical, skip and list live edits
 
 --home and --platform are test seams: they retarget every home-relative path
 and the platform check without touching the real home. The bare --plan flag is
@@ -1519,6 +1521,238 @@ def reconcile_skills(items, canonical, targets, home, profile, read_only=False):
     return ops, new_targets, skipped
 
 
+# ---------------------------------------------------------------- sync (--sync)
+
+# Every apply records a fingerprint of each provider cell that ends the run
+# matching canonical. `apply --sync` overwrites a drifted cell only while its
+# live content still equals that recorded render: the drift then came from
+# canonical (a pull, a fragment edit), not from someone editing the live file.
+# Fingerprints are hashes, so resolved secrets never reach the state file.
+
+def rendered_path(home):
+    return state_dir(home) / "rendered.json"
+
+
+def load_rendered(home):
+    path = rendered_path(home)
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text())
+    except Exception as exc:
+        sys.exit(f"error: cannot parse {path}: {exc}")
+
+
+def save_rendered(home, records):
+    path = rendered_path(home)
+    private_mkdir(path.parent)
+    path.write_text(json.dumps(records, indent=2, sort_keys=True) + "\n")
+    os.chmod(path, 0o600)
+
+
+def fingerprint(text):
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def mcp_fingerprint(live):
+    return fingerprint(norm(live))
+
+
+def skill_fingerprint(home, agent, name):
+    """Non-Codex agents link straight to canonical, so the link itself is the
+    render. Codex reads a generated copy whose content can be edited."""
+    if agent == "codex":
+        generated = codex_generated_skills_dir(home) / name
+        return dir_digest(generated) if generated.is_dir() else None
+    target = home / SKILL_AGENTS[agent] / name
+    return "link" if target.is_symlink() else None
+
+
+def sync_decision(records, domain, item, provider, live_fingerprint):
+    """-> None to overwrite, else the reason to leave the cell alone."""
+    recorded = records.get(domain, {}).get(item, {}).get(provider)
+    if recorded is None:
+        return "no previous render recorded"
+    if live_fingerprint != recorded:
+        return "live edited since last apply"
+    return None
+
+
+def missing_decision(records, domain, item, provider):
+    """A canonical item never rendered here is new: write it. One that was
+    rendered and is now gone was deleted live: leave it."""
+    if records.get(domain, {}).get(item, {}).get(provider) is not None:
+        return "deleted live since last apply"
+    return None
+
+
+def sync_mcps(items, records):
+    """-> (resolutions, skipped) using reconcile_mcps' resolution vocabulary."""
+    resolutions, skipped = {}, []
+    for name, cells in items.items():
+        for client, cell in cells.items():
+            state = cell["state"]
+            if state == MISSING:
+                reason = missing_decision(records, "mcps", name, client)
+                action = "sync"
+            elif state == MODIFIED:
+                reason = sync_decision(records, "mcps", name, client,
+                                       mcp_fingerprint(cell["live"]))
+                action = "sync"
+            elif state in (ADDED, UNTARGETED):
+                # canonical dropped the server or this client
+                reason = sync_decision(records, "mcps", name, client,
+                                       mcp_fingerprint(cell["live"]))
+                action = "remove"
+            else:
+                continue
+            if reason is None:
+                resolutions[(name, client)] = action
+            else:
+                skipped.append((name, [client], state, reason))
+    return resolutions, skipped
+
+
+def sync_skills(items, canonical, home, records):
+    """-> (ops, skipped). Real copies (unlinked) and untargeted links always
+    need an interactive decision."""
+    ops, skipped = [], []
+    for name, cells in items.items():
+        for agent, cell in cells.items():
+            state = cell["state"]
+            target = home / SKILL_AGENTS[agent] / name
+            if state == MISSING and name in canonical:
+                reason = missing_decision(records, "skills", name, agent)
+                op = ("link", name, agent, CANONICAL_SKILLS / name, target)
+            elif state == MODIFIED and agent == "codex":
+                reason = sync_decision(records, "skills", name, agent,
+                                       skill_fingerprint(home, agent, name))
+                op = ("link", name, agent, CANONICAL_SKILLS / name, target)
+            elif state == ORPHANED:
+                reason = sync_decision(records, "skills", name, agent,
+                                       skill_fingerprint(home, agent, name))
+                op = ("remove", name, agent, None, target)
+            elif state in DRIFT_STATES:
+                reason, op = "needs an interactive decision", None
+            else:
+                continue
+            if reason is None:
+                ops.append(op)
+            else:
+                skipped.append((name, [agent], state, reason))
+    return ops, skipped
+
+
+def sync_instructions(items, records):
+    """-> (resolutions, skipped). Legacy-path migrations stay interactive."""
+    resolutions, skipped = {}, []
+    for provider, cell in items.items():
+        state = cell["state"]
+        if state == IN_SYNC:
+            continue
+        if cell.get("legacy") is not None:
+            reason = "legacy path needs an interactive migrate"
+        elif state == MISSING:
+            reason = missing_decision(records, "instructions", provider, "file")
+        elif state == MODIFIED:
+            reason = sync_decision(records, "instructions", provider, "file",
+                                   fingerprint(cell["live"]))
+        else:
+            reason = "needs an interactive decision"
+        if reason is None:
+            resolutions[provider] = "sync"
+        else:
+            skipped.append(("instructions", [provider], state, reason))
+    return resolutions, skipped
+
+
+def current_renders(mcp_items, skill_rows, instr_items, home):
+    """Fingerprints of every cell that matches canonical right now, plus the
+    cells still drifted (whose previous record must survive)."""
+    renders = {"mcps": {}, "skills": {}, "instructions": {}}
+    drifted = {"mcps": set(), "skills": set(), "instructions": set()}
+    for name, cells in mcp_items.items():
+        for client, cell in cells.items():
+            if cell["state"] == IN_SYNC:
+                renders["mcps"].setdefault(name, {})[client] = \
+                    mcp_fingerprint(cell["live"])
+            else:
+                drifted["mcps"].add((name, client))
+    for name, agents in skill_rows.items():
+        for agent, state in agents.items():
+            if state == IN_SYNC:
+                value = skill_fingerprint(home, agent, name)
+                if value is not None:
+                    renders["skills"].setdefault(name, {})[agent] = value
+            else:
+                drifted["skills"].add((name, agent))
+    for provider, cell in instr_items.items():
+        if cell["state"] == IN_SYNC:
+            renders["instructions"][provider] = {"file": fingerprint(cell["live"])}
+        else:
+            drifted["instructions"].add((provider, "file"))
+    return renders, drifted
+
+
+def merge_renders(records, domains, renders, drifted):
+    """Rebuild each domain in scope: fresh in-sync fingerprints win, drifted
+    cells keep their old record, and cells gone from both sides are dropped."""
+    merged = {domain: dict(entries) for domain, entries in records.items()}
+    for domain in domains:
+        old = records.get(domain, {})
+        new = {item: dict(cells) for item, cells in renders[domain].items()}
+        for item, provider in drifted[domain]:
+            value = old.get(item, {}).get(provider)
+            if value is not None:
+                new.setdefault(item, {})[provider] = value
+        merged[domain] = new
+    return merged
+
+
+def skill_render_rows(home, targets, profile):
+    """{name: {agent: state}} for every targeted canonical skill, including
+    fully in-sync rows that plan_skills drops."""
+    rows = {}
+    if not CANONICAL_SKILLS.is_dir():
+        return rows
+    for path in sorted(CANONICAL_SKILLS.iterdir()):
+        if not path.is_dir() or path.name.startswith("."):
+            continue
+        for agent in skill_clients(path.name, targets, profile):
+            target = home / SKILL_AGENTS[agent] / path.name
+            cell = classify_skill(target, path, agent, home) \
+                if target.exists() or target.is_symlink() else {"state": MISSING}
+            if cell is not None:
+                rows.setdefault(path.name, {})[agent] = cell["state"]
+    # orphaned links outlive their canonical skill; keep their records
+    drift, _ = plan_skills(home, targets, profile)
+    for name, cells in drift.items():
+        for agent, cell in cells.items():
+            if cell["state"] != IN_SYNC:
+                rows.setdefault(name, {})[agent] = cell["state"]
+    return rows
+
+
+def record_renders(home, genmod, env, profile, platform, scope):
+    """Re-read canonical and live after this apply and save fingerprints of
+    what now matches canonical. scope: the domains apply looked at."""
+    mcp_items, skill_rows, instr_items = {}, {}, {}
+    if "mcps" in scope:
+        servers = genmod.load_servers()
+        in_scope_servers, out_of_scope = partition_servers(
+            genmod, servers, profile, platform, env)
+        mcp_items, _ = plan_mcps(genmod, in_scope_servers, env, home,
+                                 ignore=out_of_scope, platform=platform)
+    if "skills" in scope:
+        skill_rows = skill_render_rows(
+            home, load_skill_targets(load_profiles()), profile)
+    if "instructions" in scope:
+        targets, default_source = load_instruction_targets()
+        instr_items = plan_instructions(targets, home, profile, default_source)
+    renders, drifted = current_renders(mcp_items, skill_rows, instr_items, home)
+    save_rendered(home, merge_renders(load_rendered(home), scope, renders, drifted))
+
+
 # ---------------------------------------------------------------- preview + write
 
 def final_mcp_state(genmod, new_servers, env, live_all, resolutions, plan_items):
@@ -1804,6 +2038,9 @@ def parse_args(argv=None):
     parser.add_argument("--json", action="store_true", help="with plan: JSON output")
     parser.add_argument("--only", choices=["mcps", "skills", "instructions", "memory"],
                         help="limit scope")
+    parser.add_argument("--sync", action="store_true",
+                        help="with apply: no prompts; overwrite only drift that "
+                        "came from canonical, skip and list live edits")
     parser.add_argument("--profile", help="profile from profiles.yaml "
                         "(saved on apply; required on first run)")
     # test seams: retarget the home directory and platform without a real home
@@ -1812,6 +2049,8 @@ def parse_args(argv=None):
                         default=detect_platform(), help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     args.plan = args.plan or args.command == "plan"
+    if args.sync and args.plan:
+        parser.error("--sync applies; it cannot be combined with plan")
     return args
 
 
@@ -1823,6 +2062,7 @@ def main():
     profile = resolve_profile(args, profiles)
     run_preflight(profile)
     read_only = effective_mode(profile) == "read-only"
+    render_scope = [d for d in ("mcps", "skills", "instructions") if in_scope(d)]
     if not args.plan:
         save_local_config(args.home, {"profile": profile["name"]})
 
@@ -1897,6 +2137,8 @@ def main():
     if not mcp_drift and not skill_drift and not instr_drift \
             and not memory_drift and not memory_files and not header_drift:
         print("\nEverything in sync. Nothing to do.")
+        if not args.plan:
+            record_renders(home, genmod, env, profile, args.platform, render_scope)
         return
     if args.plan:
         return
@@ -1905,16 +2147,25 @@ def main():
     new_servers = servers
     resolutions = {}
     mcp_skipped = []
-    if mcp_drift:
-        new_servers, resolutions, mcp_skipped = reconcile_mcps(
-            mcp_drift, servers, secret_map, read_only)
     skill_ops, new_skill_targets, skill_skipped = ([], skill_targets, [])
-    if skill_drift:
-        skill_ops, new_skill_targets, skill_skipped = reconcile_skills(
-            skill_drift, canonical_skills, skill_targets, home, profile, read_only)
     new_instr_targets, source_updates, instr_resolutions, instr_skipped = \
         (instr_targets, {}, {}, [])
-    if instr_drift:
+    sync_skipped = []
+    if args.sync:
+        records = load_rendered(home)
+        resolutions, mcp_sync_skipped = sync_mcps(mcp_drift, records)
+        skill_ops, skill_sync_skipped = sync_skills(
+            skill_drift, canonical_skills, home, records)
+        instr_resolutions, instr_sync_skipped = sync_instructions(
+            instr_drift, records)
+        sync_skipped = mcp_sync_skipped + skill_sync_skipped + instr_sync_skipped
+    elif mcp_drift:
+        new_servers, resolutions, mcp_skipped = reconcile_mcps(
+            mcp_drift, servers, secret_map, read_only)
+    if skill_drift and not args.sync:
+        skill_ops, new_skill_targets, skill_skipped = reconcile_skills(
+            skill_drift, canonical_skills, skill_targets, home, profile, read_only)
+    if instr_drift and not args.sync:
         new_instr_targets, source_updates, instr_resolutions, instr_skipped = \
             reconcile_instructions(instr_items, instr_targets, secret_map, read_only)
 
@@ -1981,14 +2232,19 @@ def main():
         print(f"  header file: write {path}")
     for name, clients, state in mcp_skipped + skill_skipped + instr_skipped:
         print(f"  skipped: {name} ({state} in {', '.join(clients)}) — will re-ask next apply")
+    for name, clients, state, reason in sync_skipped:
+        print(f"  skipped: {name} ({state} in {', '.join(clients)}): {reason}; "
+              "resolve with interactive apply")
     if not any_change:
         print("  no writes needed.")
+        record_renders(home, genmod, env, profile, args.platform, render_scope)
         return
 
-    answer = input("\nconfirm? (y/N) ").strip().lower()
-    if answer != "y":
-        print("aborted. nothing written.")
-        return
+    if not args.sync:
+        answer = input("\nconfirm? (y/N) ").strip().lower()
+        if answer != "y":
+            print("aborted. nothing written.")
+            return
 
     # ---- write
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -2019,6 +2275,7 @@ def main():
         write_instruction_targets(new_instr_targets)
     # After the MCP write: both rewrite ~/.codex/config.toml.
     write_memory_off(memory_drift, stamp, home)
+    record_renders(home, genmod, env, profile, args.platform, render_scope)
 
     print("\nSUMMARY")
     if norm(new_servers) != norm(servers):
