@@ -44,6 +44,31 @@ Move a deployment only when the user asks for it on another machine:
 3. If the owner is unreachable, the move takes the claim over. Confirm with the user that the owner is really gone first; a laptop that is only offline may still be running it.
 4. Run `move`. A reachable owner stops its dev session and releases the claim; the deployment stays. A live session then starts on the target, with build + start when the commits differ. Pass `followUp` only to override that choice. Track the returned operation with `operation_status`.
 
+## Sandboxes
+
+A sandbox is a per-ticket preview: only the ticket's PRs run in it, and every other service falls back to UAT-US. Each sandbox leases one namespace from a fixed pool, so its URLs come from that namespace's ingresses. The personal namespace `saibhushan` is listed as the default sandbox; keep using the ordinary tools above for it.
+
+| Tool | Purpose |
+| --- | --- |
+| sandbox_list / sandbox_status | Sandboxes with slot, power, URLs, members, builds, expiry, activity |
+| sandbox_discover | Open PRs whose branch matches a ticket key, as proposed members |
+| sandbox_create | Lease a slot and build members; `discover: true` adds matching PRs |
+| sandbox_update | Add or remove members |
+| sandbox_build | Rebuild stale members, or rebuild an expired sandbox into a new slot |
+| sandbox_wake / sandbox_sleep | Scale members up or down |
+| sandbox_expire / sandbox_delete | Free the slot and keep the record / remove it entirely |
+| sandbox_head | Record a new head SHA or merge for a member |
+| sandbox_controller | Which machine runs the poller, when it last polled, its last error |
+
+Every mutation needs `actor`: a short name for who asked, such as the ticket key or `agent`. It shows in the activity log the user reads. `logs` and `run` accept `sandbox` to target a sandbox member; `run` there also needs `actor`.
+
+1. Before creating, `sandbox_list` and reuse the ticket's sandbox if it exists. Rebuild an expired one with `sandbox_build`; do not create a second.
+2. Create asleep by default. Wake only when you are about to verify, and sleep when done. The controller sleeps idle sandboxes after 30 minutes and expires them after a day unused.
+3. New pushes to member PRs are picked up by the controller and rebuilt; check `sandbox_status` for `deployedSha` before verifying a fix, rather than rebuilding by hand.
+4. Delete a sandbox only when the user asks or the ticket is done. Merging does not delete it.
+5. A full pool or a member held by a live dev session fails the operation. Report it; do not free another ticket's slot.
+6. Builds and wakes return an operation ID; follow it with `operation_status`.
+
 ## Environment hours
 
 Development and UAT-US pods run on EKS nodes that opsbot turns off. When they are off, nothing can be deployed, started, or verified. Do not work around this by rescheduling pods onto always-on nodes or running dependencies elsewhere.
