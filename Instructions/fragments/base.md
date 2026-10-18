@@ -66,6 +66,10 @@ that and say why.
   authority, or shared state.
 - When the normal access path fails, ask once before trying alternate routes
   into the same system.
+- Before building an integration, prove the auth method I require works
+  against the target endpoint. If only another method works (browser
+  cookies, scraped sessions), report the mismatch and get my scope call;
+  never substitute it.
 - Completion is a claim that must be verified at the real boundary. Run the
   relevant checks, inspect the final diff and status, re-read shared writes,
   and confirm the actual PR or published result.
