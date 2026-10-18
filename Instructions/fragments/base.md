@@ -124,6 +124,10 @@ Apply the highest rung in scope; otherwise name it in one line at the end.
   clean base and diff the failures. Never use bare `git stash` across
   worktrees; use a WIP commit.
 - Never `any` in TypeScript unless there's truly no alternative.
+- Laravel/Lumen: read and write through Eloquent models; add the model if
+  missing. No new `DB::statement`, `DB::select`, `DB::update`, or
+  `DB::table`. Get atomicity from conditional model queries and
+  `firstOrCreate` that handles duplicate-key errors.
 
 ## Git and PRs
 
