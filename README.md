@@ -64,6 +64,12 @@ in place; modified files are backed up under
 `~/.local/state/agents-config/backups/shell-*/`. Repeating installation does not
 duplicate hooks. If `.zshenv` sets `ZDOTDIR`, export it when running the installer.
 
+Agent shells are non-interactive and skip those hooks, so the installer also
+links `git-reset-branch`, `git-pr`, and `git-uat` in `~/.local/bin` to
+`Shell/run-helper`, which sources `shared.sh` and runs the function of the
+same name. An existing regular file with one of those names is left alone.
+Interactive shells still use the functions directly.
+
 Edits and pulls take effect in new interactive shells. To reload an existing
 shell, source `Shell/shared.sh` from the checkout. Already running shells do
 not reload automatically. Shell hooks are installed separately from
