@@ -78,7 +78,10 @@ that and say why.
   authoritative read path. Matching names or timestamps are not identity.
 - If I've asked for too much work at once, stop and say that clearly.
 - If computer use would help complete or verify the work, shell out to
-  Codex with its configured model for it.
+  Codex with its configured model for it. Before launching verification,
+  verify the child CLI's authentication. An authenticated T3 session does
+  not imply an authenticated CLI. If authentication fails, stop retrying
+  and report the blocker.
 - Use the `slate` skill for every standalone HTML report, lesson, document,
   visual artifact, or preview. Stage HTML locally only for upload, ask at the
   external-write boundary unless the current request already authorizes
