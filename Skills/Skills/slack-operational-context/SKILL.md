@@ -34,4 +34,3 @@ task's chat with source links and timestamps. Do not retain message histories,
 email bodies, credentials, or personal data in this repository. These rules
 authorize reads only, not posting, reactions, commands, environment changes,
 or scheduling automation.
-
