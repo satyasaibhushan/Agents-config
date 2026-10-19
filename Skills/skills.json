@@ -35,6 +35,7 @@
     "new-relic-log-search": {"profiles": ["mac-admin", "devbox-admin", "vmockbox-admin", "devbox-agent"]},
     "pdf": {"profiles": ["mac-admin", "devbox-admin", "vmockbox-admin", "devbox-agent"]},
     "request-refactor-plan": {"profiles": ["mac-admin", "devbox-admin", "vmockbox-admin", "devbox-agent"]},
+    "slack-operational-context": {"profiles": ["mac-admin", "devbox-admin", "vmockbox-admin", "devbox-agent"]},
     "slate": {"profiles": ["mac-admin", "devbox-admin", "vmockbox-admin", "devbox-agent"]},
     "show-me-your-work": {"profiles": ["mac-admin", "devbox-admin", "vmockbox-admin", "devbox-agent"]},
     "teach": {"profiles": ["mac-admin", "devbox-admin", "vmockbox-admin"]},
