@@ -1,7 +1,7 @@
 # Devbox
 
 This host is a shared Linux devbox. Code checkouts live under `/srv/Code`
-(the code root on this host), not `~/Code` — read the base code-structure
+(the code root on this host), not `~/Code`: read the base code-structure
 section with that substitution in mind.
 
 Shared configuration lives at `/srv/Agents/Config`; workflows live at

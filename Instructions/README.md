@@ -3,7 +3,7 @@
 Canonical instructions, distributed to every agent by the reconciling apply.
 
 ```text
-fragments/          Ordered building blocks (base.md, devbox.md, restricted-agent.md)
+fragments/          Ordered building blocks (base.md, plus one per host shape)
 providers/          Per-provider extras and full divergences
 instructions.yaml   Which live file belongs to which provider
 ```
@@ -12,9 +12,9 @@ instructions.yaml   Which live file belongs to which provider
 
 Each provider's live file is the concatenation of the **active profile's
 fragments** (in `profiles.yaml` order) plus the provider's optional `extra`
-fragment. So `mac-admin` renders `base.md` alone, while `devbox-agent` renders
-`base.md` + `devbox.md` + `restricted-agent.md` — same canonical content, one
-render per machine shape.
+fragment. So `mac-admin` renders `base.md` + `mac.md` + `hindsight.md`, while
+`devbox-agent` renders `base.md` + `devbox.md` + `restricted-agent.md`: same
+canonical content, one render per machine shape.
 
 `instructions.yaml` (version 2) maps provider → live file:
 

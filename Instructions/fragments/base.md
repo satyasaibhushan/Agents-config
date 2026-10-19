@@ -65,7 +65,10 @@ that and say why.
   the material ones at the end. Ask when a choice changes behaviour, scope,
   authority, or shared state.
 - When the normal access path fails, ask once before trying alternate routes
-  into the same system.
+  into the same system. For an integration, that means proving the auth
+  method I require works against the target endpoint before building
+  anything. If only another method works (browser cookies, scraped
+  sessions), report the mismatch and get my scope call; never substitute it.
 - Completion is a claim that must be verified at the real boundary. Run the
   relevant checks, inspect the final diff and status, re-read shared writes,
   and confirm the actual PR or published result.
@@ -124,6 +127,10 @@ Apply the highest rung in scope; otherwise name it in one line at the end.
   clean base and diff the failures. Never use bare `git stash` across
   worktrees; use a WIP commit.
 - Never `any` in TypeScript unless there's truly no alternative.
+- Laravel/Lumen: read and write through Eloquent models; add the model if
+  missing. No new `DB::statement`, `DB::select`, `DB::update`, or
+  `DB::table` (`DB::transaction` is fine). Get atomicity from conditional
+  model queries and `firstOrCreate` that handles duplicate-key errors.
 
 ## Git and PRs
 

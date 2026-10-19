@@ -134,6 +134,25 @@ class McpPlanTest(ApplyTestCase):
             {"command": "proxy", "args": ["https://example.com/mcp"]},
         )
 
+    def test_header_files_keep_secret_out_of_args_and_track_drift(self):
+        servers = {"remote": {
+            "clients": ["claude-desktop"],
+            "header_files": {"${HOME}/h/remote": {"api-key": "${DEMO_KEY}"}},
+            "claude-desktop": {"command": "npx", "args": [
+                "mcp-remote", "--header-file", "${HOME}/h/remote"]},
+        }}
+        env = {**ENV, "HOME": str(self.home)}
+        desired = self.apply.desired_mcp(
+            self.genmod, "remote", servers["remote"], "claude-desktop", env)
+        self.assertNotIn(ENV["DEMO_KEY"], json.dumps(desired))
+
+        drift = self.apply.plan_header_files(self.genmod, servers, env)
+        path = self.home / "h/remote"
+        self.assertEqual(drift, {path: "api-key: secret-value-123\n"})
+        self.apply.write_header_files(drift, self.home, "stamp")
+        self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(self.apply.plan_header_files(self.genmod, servers, env), {})
+
     def test_codex_write_preserves_app_managed_http_transport(self):
         path = self.write(
             ".codex/config.toml",
@@ -1042,6 +1061,174 @@ class CliTest(ApplyTestCase):
             [str(launcher), "--help"], cwd=REPO,
             check=True, capture_output=True, text=True)
         self.assertIn("Reconciling apply", result.stdout)
+
+
+class SyncDecisionTest(ApplyTestCase):
+    """apply --sync overwrites only drift whose live side still equals the
+    last recorded render; anything else is skipped with a reason."""
+
+    def records(self, domain, item, provider, value):
+        return {domain: {item: {provider: value}}}
+
+    def test_mcp_canonical_drift_overwrites_and_live_edit_skips(self):
+        A = self.apply
+        old = {"command": "alpha-mcp", "args": ["--old"]}
+        items = {"alpha": {
+            "claude-code": {"state": A.MODIFIED, "live": old, "desired": {}},
+            "codex": {"state": A.MODIFIED, "live": {"command": "hand-edited"},
+                      "desired": {}},
+        }}
+        records = {"mcps": {"alpha": {
+            "claude-code": A.mcp_fingerprint(old),
+            "codex": A.mcp_fingerprint(old),
+        }}}
+        resolutions, skipped = A.sync_mcps(items, records)
+        self.assertEqual(resolutions, {("alpha", "claude-code"): "sync"})
+        self.assertEqual(skipped, [("alpha", ["codex"], A.MODIFIED,
+                                    "live edited since last apply")])
+
+    def test_mcp_without_record_is_skipped(self):
+        A = self.apply
+        items = {"alpha": {"cursor": {"state": A.MODIFIED, "live": {"x": 1},
+                                      "desired": {}}}}
+        resolutions, skipped = A.sync_mcps(items, {})
+        self.assertEqual(resolutions, {})
+        self.assertEqual(skipped[0][3], "no previous render recorded")
+
+    def test_mcp_missing_is_added_unless_it_was_rendered_before(self):
+        A = self.apply
+        items = {"new": {"cursor": {"state": A.MISSING, "live": None, "desired": {}}},
+                 "gone": {"cursor": {"state": A.MISSING, "live": None, "desired": {}}}}
+        records = self.records("mcps", "gone", "cursor", "abc")
+        resolutions, skipped = A.sync_mcps(items, records)
+        self.assertEqual(resolutions, {("new", "cursor"): "sync"})
+        self.assertEqual(skipped, [("gone", ["cursor"], A.MISSING,
+                                    "deleted live since last apply")])
+
+    def test_mcp_dropped_from_canonical_is_removed_only_when_unedited(self):
+        A = self.apply
+        live = {"command": "old"}
+        items = {"old": {
+            "cursor": {"state": A.ADDED, "live": live, "desired": None},
+            "codex": {"state": A.ADDED, "live": live, "desired": None},
+        }}
+        records = self.records("mcps", "old", "cursor", A.mcp_fingerprint(live))
+        resolutions, skipped = A.sync_mcps(items, records)
+        self.assertEqual(resolutions, {("old", "cursor"): "remove"})
+        self.assertEqual([s[1] for s in skipped], [["codex"]])
+
+    def test_instruction_decisions(self):
+        A = self.apply
+        items = {
+            "codex": {"state": A.MODIFIED, "live": "old render\n", "legacy": None},
+            "cursor": {"state": A.MODIFIED, "live": "hand edit\n", "legacy": None},
+            "claude-code": {"state": A.MIGRATE, "live": "x\n",
+                            "legacy": self.home / "CLAUDE.md"},
+            "new": {"state": A.MISSING, "live": None, "legacy": None},
+            "synced": {"state": A.IN_SYNC, "live": "x\n", "legacy": None},
+        }
+        records = {"instructions": {
+            "codex": {"file": A.fingerprint("old render\n")},
+            "cursor": {"file": A.fingerprint("old render\n")},
+        }}
+        resolutions, skipped = A.sync_instructions(items, records)
+        self.assertEqual(resolutions, {"codex": "sync", "new": "sync"})
+        self.assertEqual({s[1][0]: s[3] for s in skipped}, {
+            "cursor": "live edited since last apply",
+            "claude-code": "legacy path needs an interactive migrate",
+        })
+
+    def test_skill_decisions(self):
+        A = self.apply
+        canonical = self.tmp / "canonical-skills"
+        (canonical / "demo").mkdir(parents=True)
+        (canonical / "demo" / "SKILL.md").write_text("demo\n")
+        A.CANONICAL_SKILLS = canonical
+        generated = A.codex_generated_skills_dir(self.home) / "demo"
+        generated.mkdir(parents=True)
+        (generated / "SKILL.md").write_text("old render\n")
+        orphan = self.home / ".claude/skills/removed"
+        orphan.parent.mkdir(parents=True)
+        orphan.symlink_to(canonical / "removed")
+        items = {
+            "demo": {
+                "codex": {"state": A.MODIFIED},
+                "agents": {"state": A.MISSING},
+                "cursor": {"state": A.UNLINKED, "identical": False},
+            },
+            "removed": {"claude-code": {"state": A.ORPHANED}},
+        }
+        records = {"skills": {
+            "demo": {"codex": A.dir_digest(generated)},
+            "removed": {"claude-code": "link"},
+        }}
+        ops, skipped = A.sync_skills(items, {"demo": canonical / "demo"},
+                                     self.home, records)
+        self.assertEqual([(op[0], op[1], op[2]) for op in ops], [
+            ("link", "demo", "codex"), ("link", "demo", "agents"),
+            ("remove", "removed", "claude-code")])
+        self.assertEqual(skipped, [("demo", ["cursor"], A.UNLINKED,
+                                    "needs an interactive decision")])
+
+        (generated / "SKILL.md").write_text("edited in place\n")
+        ops, skipped = A.sync_skills({"demo": {"codex": {"state": A.MODIFIED}}},
+                                     {"demo": canonical / "demo"}, self.home, records)
+        self.assertEqual(ops, [])
+        self.assertEqual(skipped[0][3], "live edited since last apply")
+
+    def test_merge_keeps_drifted_records_and_drops_vanished_cells(self):
+        A = self.apply
+        records = {"mcps": {"a": {"cursor": "old-a"}, "gone": {"cursor": "x"},
+                            "b": {"codex": "old-b"}},
+                   "skills": {"s": {"codex": "keep-me"}}}
+        renders = {"mcps": {"a": {"cursor": "new-a"}}, "skills": {},
+                   "instructions": {}}
+        drifted = {"mcps": {("b", "codex")}, "skills": set(),
+                   "instructions": set()}
+        merged = A.merge_renders(records, ["mcps"], renders, drifted)
+        self.assertEqual(merged["mcps"], {"a": {"cursor": "new-a"},
+                                          "b": {"codex": "old-b"}})
+        self.assertEqual(merged["skills"], records["skills"])  # out of scope
+
+    def test_sync_cannot_combine_with_plan(self):
+        with self.assertRaises(SystemExit):
+            self.apply.parse_args(["plan", "--sync"])
+
+
+class SyncApplyTest(ApplyTestCase):
+    """End to end through the launcher with stdin closed: no prompt may fire."""
+
+    def run_sync(self, *extra):
+        env = dict(os.environ, HOME=str(self.home))
+        return subprocess.run([
+            str(REPO / "scripts" / "agents-config"), "apply", "--sync",
+            "--only", "instructions", "--profile", "mac-admin",
+            "--home", str(self.home), "--platform", "darwin", *extra,
+        ], cwd=REPO, env=env, stdin=subprocess.DEVNULL, check=True,
+            capture_output=True, text=True)
+
+    def test_sync_writes_new_overwrites_canonical_drift_and_reports_live_edits(self):
+        self.run_sync()  # fresh home: every file is new, so all are written
+        codex = self.home / ".codex/AGENTS.md"
+        cursor = self.home / "AGENTS.md"
+        rendered = codex.read_text()
+        self.assertTrue(cursor.exists())
+
+        # codex: pretend canonical moved on since the last render
+        old_render = "previous canonical render\n"
+        codex.write_text(old_render)
+        records_path = self.apply.rendered_path(self.home)
+        records = json.loads(records_path.read_text())
+        records["instructions"]["codex"]["file"] = self.apply.fingerprint(old_render)
+        records_path.write_text(json.dumps(records))
+        # cursor: a real live edit
+        cursor.write_text(cursor.read_text() + "local rule\n")
+
+        result = self.run_sync()
+        self.assertEqual(codex.read_text(), rendered)
+        self.assertTrue(cursor.read_text().endswith("local rule\n"))
+        self.assertIn("skipped: instructions (modified in cursor): "
+                      "live edited since last apply", result.stdout)
 
 
 class MemoryTest(ApplyTestCase):

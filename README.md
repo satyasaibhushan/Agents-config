@@ -64,6 +64,12 @@ in place; modified files are backed up under
 `~/.local/state/agents-config/backups/shell-*/`. Repeating installation does not
 duplicate hooks. If `.zshenv` sets `ZDOTDIR`, export it when running the installer.
 
+Agent shells are non-interactive and skip those hooks, so the installer also
+links `git-reset-branch`, `git-pr`, and `git-uat` in `~/.local/bin` to
+`Shell/run-helper`, which sources `shared.sh` and runs the function of the
+same name. An existing regular file with one of those names is left alone.
+Interactive shells still use the functions directly.
+
 Edits and pulls take effect in new interactive shells. To reload an existing
 shell, source `Shell/shared.sh` from the checkout. Already running shells do
 not reload automatically. Shell hooks are installed separately from
@@ -105,6 +111,7 @@ agents-config apply                    # full interactive apply
 agents-config plan                     # read-only drift report
 agents-config plan --json              # machine-readable matrix
 agents-config apply --only mcps        # or skills / instructions / memory
+agents-config apply --sync             # no prompts: canonical drift only
 ```
 
 - **Fetch/plan** normalizes every agent's live config into an item × provider
@@ -122,6 +129,14 @@ agents-config apply --only mcps        # or skills / instructions / memory
   ripple where a promote rewrites providers that were in sync with the old
   base. Zero writes happen before you confirm; every touched file is backed up
   under `~/.local/state/agents-config/backups/<timestamp>/`.
+- **Sync** (`apply --sync`) never prompts. Every apply records a hash of
+  each provider entry that matches canonical in
+  `~/.local/state/agents-config/rendered.json`. `--sync` overwrites drift only
+  where live still equals that recorded render (a pull or fragment edit),
+  writes canonical items never rendered here, removes items canonical dropped,
+  and skips and lists everything else: live edits, live deletions, entries with
+  no recorded render, and states that need a decision (unlinked copies, legacy
+  migrations). Promoting live edits stays interactive.
 - **Secrets** never enter the repo: literal values from the selected MCP env
   file (normally `~/.config/agents-config/mcp.env`, or a group-read-only shared
   file reached through that path) are reverse-substituted back into `${VAR}`

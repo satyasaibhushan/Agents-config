@@ -22,7 +22,7 @@ profiles:
     mode: read-write
     code_root: ~/Code
     git_email: satyasaibhushan@gmail.com
-    fragments: [base.md, hindsight.md]
+    fragments: [base.md, mac.md, hindsight.md]
     mcps: default-allow
     skills: default-allow
     skill_clients: [claude-code, codex, cursor]

@@ -10,6 +10,8 @@ import tempfile
 
 START = '# >>> shared shell config >>>'
 END = '# <<< shared shell config <<<'
+# shared.sh functions that agents call from non-interactive shells.
+HELPERS = ('git-reset-branch', 'git-pr', 'git-uat')
 
 
 def install(home, source, zsh_dir):
@@ -61,7 +63,21 @@ def install(home, source, zsh_dir):
         print('backup: ' + str(backup))
 
 
+def link_helpers(bin_dir, runner):
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    for name in HELPERS:
+        link = bin_dir / name
+        if link.exists() and not link.is_symlink():
+            print('skipped: ' + str(link) + ' is not a symlink')
+            continue
+        if link.is_symlink():
+            link.unlink()
+        link.symlink_to(runner)
+        print('linked: ' + str(link))
+
+
 if __name__ == '__main__':
     home = Path.home()
     source = Path(__file__).resolve().parents[1] / 'Shell/shared.sh'
     install(home, source, Path(os.environ.get('ZDOTDIR') or home))
+    link_helpers(home / '.local/bin', source.parent / 'run-helper')
