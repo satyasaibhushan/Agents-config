@@ -65,11 +65,10 @@ that and say why.
   the material ones at the end. Ask when a choice changes behaviour, scope,
   authority, or shared state.
 - When the normal access path fails, ask once before trying alternate routes
-  into the same system.
-- Before building an integration, prove the auth method I require works
-  against the target endpoint. If only another method works (browser
-  cookies, scraped sessions), report the mismatch and get my scope call;
-  never substitute it.
+  into the same system. For an integration, that means proving the auth
+  method I require works against the target endpoint before building
+  anything. If only another method works (browser cookies, scraped
+  sessions), report the mismatch and get my scope call; never substitute it.
 - Completion is a claim that must be verified at the real boundary. Run the
   relevant checks, inspect the final diff and status, re-read shared writes,
   and confirm the actual PR or published result.
@@ -130,8 +129,8 @@ Apply the highest rung in scope; otherwise name it in one line at the end.
 - Never `any` in TypeScript unless there's truly no alternative.
 - Laravel/Lumen: read and write through Eloquent models; add the model if
   missing. No new `DB::statement`, `DB::select`, `DB::update`, or
-  `DB::table`. Get atomicity from conditional model queries and
-  `firstOrCreate` that handles duplicate-key errors.
+  `DB::table` (`DB::transaction` is fine). Get atomicity from conditional
+  model queries and `firstOrCreate` that handles duplicate-key errors.
 
 ## Git and PRs
 
@@ -190,11 +189,6 @@ org, CRM, and branding backend work is in `acs-org-management`; jobs in
 `.agents/scripts/` in some repos holds read-only debugging tools, each with
 `--help`. Check there before hand-writing an investigation. Globally
 gitignored; never commit or mention them anywhere the team can see.
-
-On the Mac, `vmock-vpn` (`~/Code/Personal/vmock-dev-utils/vpn/macos/`) runs
-OpenConnect rootless through ocproxy (`--script-tun`) and reconnects with the
-screen locked. Only GlobalProtect needs an unlocked session; try `vmock-vpn`
-before calling a VPN reconnect blocked.
 
 `~/Agents/Workflows/` holds specs for recurring ticket classes. Scan
 `INDEX.md` before ticket-shaped work. Fix stale workflows with the smallest

@@ -25,7 +25,6 @@
     "grilling": {"profiles": ["mac-admin", "devbox-admin", "vmockbox-admin", "devbox-agent"]},
     "handoff": {"profiles": ["mac-admin", "devbox-admin", "vmockbox-admin", "devbox-agent"]},
     "file-pr": {"profiles": ["mac-admin", "devbox-admin", "vmockbox-admin", "devbox-agent"]},
-    "fastapi-python": {"profiles": ["mac-admin", "devbox-admin", "vmockbox-admin", "devbox-agent"]},
     "find-skills": {"profiles": ["mac-admin", "devbox-admin", "vmockbox-admin", "devbox-agent"]},
     "frontend-design": {"profiles": ["mac-admin", "devbox-admin", "vmockbox-admin", "devbox-agent"]},
     "grill-me": {"profiles": ["mac-admin", "devbox-admin", "vmockbox-admin", "devbox-agent"]},
@@ -43,6 +42,8 @@
     "wait-what": {"profiles": ["mac-admin", "devbox-admin", "vmockbox-admin", "devbox-agent"]},
     "wayfinder": {"profiles": ["mac-admin", "devbox-admin", "vmockbox-admin"]},
     "wizard": {"profiles": ["mac-admin", "devbox-admin", "vmockbox-admin"]},
-    "zoom-out": {"profiles": ["mac-admin", "devbox-admin", "vmockbox-admin", "devbox-agent"]}
+    "zoom-out": {"profiles": ["mac-admin", "devbox-admin", "vmockbox-admin", "devbox-agent"]},
+    "kairo-health-semantic-layer": {"profiles": ["mac-admin", "devbox-admin", "vmockbox-admin"]},
+    "migrate-memories": {"profiles": ["mac-admin", "devbox-admin", "vmockbox-admin"]}
   }
 }
