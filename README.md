@@ -56,6 +56,23 @@ Git PR helpers open the configured browser on macOS, use `xdg-open` on Linux
 desktops, and print the URL in headless sessions. Commands such as `git`,
 `devspace`, `kubectl`, and `g++` still need to be installed where used.
 
+### Personal guidelines fork
+
+Run `python3 scripts/sync-guidelines.py --install` once per development account.
+It syncs `satyasaibhushan/guidelines` from upstream using the account's existing
+GitHub CLI login, configures DevSpace's guidelines cache to pull from that fork,
+and installs a daily cron job at 07:30 local time. The job runs an installed copy
+under `~/.local/lib/guidelines`; rerun the installer after updating this script.
+Cron must be available and enabled on the machine.
+
+The fork retains personal patches. Upstream conflicts fail the sync without
+resetting the fork. Cache setup refuses dirty checkouts and preserves local
+commits by merging. DevSpace ignores Git's `insteadOf`, so its cached origin is
+set explicitly. If the cache is deleted, rerun the install command. Scheduled
+failures go to cron's normal mail output; run the script without `--install`
+to check or retry a sync. This replaces the fork's GitHub Actions sync, whose
+built-in token cannot access the private upstream.
+
 Run `scripts/install` once per account after cloning, including on devbox.
 It adds a managed source block to `.bashrc`, `.zshrc` under `${ZDOTDIR:-$HOME}`,
 and the first existing bash login file: `.bash_profile`, `.bash_login`, or
