@@ -58,6 +58,11 @@ that and say why.
 - Prefer established mechanisms. Use the repository's existing helpers,
   authentication, scripts, and validation paths before inventing a parallel
   workflow.
+- When a named integration is missing from the current branch, inspect the
+  repository's other branches and recent commits before asking me to explain it.
+- When I name an external skill and its author, check the author's repository
+  and open pull requests before declaring it missing. Read it remotely when
+  installation was not requested.
 - Investigate deeply, deliver briefly. When real data, code, logs, or
   documents are available, analyze them before giving generic advice. Keep
   the final answer light and operational.
