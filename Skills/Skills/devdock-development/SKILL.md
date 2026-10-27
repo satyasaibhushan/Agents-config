@@ -27,9 +27,11 @@ An `exec` acknowledgment only proves command submission. Check completion and ex
 1. Inspect state and checkout before changing anything. Reuse healthy running development sessions. When the user says not to restart, adopt the running workload; do not `restart` or `build_start`.
 2. If the pod exists but development is stopped, start development only.
 3. If a changed repository's pod is absent or purged, deploy it and start development.
-4. Unchanged dependencies without development pods use the environment's UAT-US fallback. If UI is needed, deploy and start the relevant UI too.
+4. Before verification, inspect Services and their EndpointSlices in the target namespace for dependencies the changed app calls. A leftover ClusterIP Service with no ready endpoints does not fall back to UAT-US; an ExternalName Service supplies that fallback. If a stale deployment is blocking a dependency, ask before using DevDock `destroy` to restore the fallback, then verify the resulting Service. If UI is needed, deploy and start the relevant UI too.
 5. Do not routinely purge or restart healthy workloads. If DevDock fails, report the operation ID and useful error to the user. Do not bypass it with direct infrastructure changes.
 6. If a start hangs in building with no helm output, check that `lastContext.namespace` in the checkout's `.devspace/cache.yaml` matches the target namespace; a mismatch opens an interactive picker that waits forever.
+
+Before `start` or `build_start`, confirm required environment files exist on the execution machine without printing their contents. Linking machines does not copy configuration. If requirements or Dockerfiles changed since the deployed image, use `build_start` rather than `start`; observe the existing restart and shared-state approval rules.
 
 ## Machines
 
