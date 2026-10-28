@@ -305,6 +305,23 @@
         ]
       }
     },
+    "jev": {
+      "clients": ["cursor", "claude-code", "claude-desktop", "codex"],
+      "platforms": ["darwin", "linux"],
+      "profiles": ["mac-admin", "vmockbox-admin"],
+      "requires": {
+        "executables": ["node"],
+        "env": ["JEV_MCP_API_KEY"],
+        "paths": ["${CODE_ROOT}/Personal/JEV-MCP/dist/index.js"]
+      },
+      "security": "Sends caller-supplied evidence to the Decisions API using a dedicated key; returns decisions without executing actions",
+      "setup": "Clone JEV-MCP under <code root>/Personal, install and build with Node 22+, then provision JEV_MCP_API_KEY in the private MCP env file",
+      "config": {
+        "command": "node",
+        "args": ["${CODE_ROOT}/Personal/JEV-MCP/dist/index.js"],
+        "env": {"OPENAI_API_KEY": "${JEV_MCP_API_KEY}"}
+      }
+    },
     "hindsight": {
       "clients": [
         "cursor",
