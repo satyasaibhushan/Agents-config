@@ -100,3 +100,21 @@ account can exercise their granted scope.
 Feedback integration (mac-admin, vmockbox-admin) uses a separate owner-only key file, never
 `mcp.env` or literal resolved headers. See [setup and runtime](hindsight/README.md).
 The dedicated installer also covers existing hub profiles and OpenCode.
+
+## JEV-MCP
+
+The `jev` server exposes a generic `decide` tool on `mac-admin` and
+`vmockbox-admin`. It accepts caller-defined evidence and questions, with no
+task-specific routing or execution policy. Both profiles include conditional
+usage guidance from `Instructions/fragments/decisions.md`.
+
+Provision [JEV-MCP](https://github.com/satyasaibhushan/JEV-MCP) at
+`${CODE_ROOT}/Personal/JEV-MCP` on each machine using Node 22+, `npm ci`, and
+`npm run build`. Put a dedicated Decisions API key in `JEV_MCP_API_KEY` in the
+private `~/.config/agents-config/mcp.env` file. The existing renderer maps it to
+the server's `OPENAI_API_KEY`; never put the value in this repository or tool
+arguments. The server remains out of scope until Node, the build, and the key
+are present. Credentials and builds are provisioned separately on each machine.
+
+Use the existing MCP and instruction apply commands after review. This definition
+does not install the runtime, provision credentials, or change approval settings.
