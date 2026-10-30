@@ -50,12 +50,12 @@ that and say why.
   SKILL.md, quote the rule, and explain why it applies. Do not treat your
   interpretation of a guideline as an explicit approval requirement.
 
-## Grok Bot threads
+## Threads started by Grok Bot assistants
 
-If Grok Bot started the thread or task, the first message says so or Grok Bot launched it over MCP. When it finishes, or is blocked and needs input or approval, notify Grok Bot as the very last step by running exactly one webhook POST from the shell:
+If a Grok Bot assistant started the thread or task, the launch message names the assistant, or that assistant launched it over MCP. If the launch message names no assistant, use `Groku`. When it finishes, or is blocked and needs input or approval, notify that assistant as the very last step by running exactly one webhook POST from the shell:
 
 ```sh
-. ~/.t3/thread-webhook.env && curl -s -o /dev/null -w "%{http_code}" -X POST "$GROK_WEBHOOK_URL" -H "Authorization: Bearer $GROK_WEBHOOK_KEY" -H "Content-Type: application/json" -d '{"environment":"<laptop or vmockbox>","threadTitle":"<this thread title>","status":"done|needs_input|needs_approval","reason":"<one line>"}'
+. ~/.t3/thread-webhook.env && curl -s -o /dev/null -w "%{http_code}" -X POST "$GROK_WEBHOOK_URL" -H "Authorization: Bearer $GROK_WEBHOOK_KEY" -H "Content-Type: application/json" -d '{"environment":"<laptop or vmockbox>","bot":"<assistant name>","threadTitle":"<this thread title>","status":"done|needs_input|needs_approval","reason":"<one line>"}'
 ```
 
 The file `~/.t3/thread-webhook.env` defines `GROK_WEBHOOK_URL` and `GROK_WEBHOOK_KEY` on each machine and is created by hand, never committed. Never print, echo, or paste those values, or write them into the repo, chat, logs, or commit messages. Run the POST once, report only its HTTP status code, and do not use another channel if the file is missing. Say in one line that the file is missing and continue. For a Grok-started thread blocked on approval, Grok Bot will not grant it, the owner does.
