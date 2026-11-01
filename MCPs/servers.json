@@ -334,7 +334,8 @@
       ],
       "profiles": [
         "mac-admin",
-        "vmockbox-admin"
+        "vmockbox-admin",
+        "devbox-admin"
       ],
       "requires": {
         "paths": [

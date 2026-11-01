@@ -49,7 +49,7 @@ class FeedbackSetupTest(unittest.TestCase):
         spec=importlib.util.spec_from_file_location('generator',ROOT/'MCPs/scripts/generate-mcps.py')
         gen=importlib.util.module_from_spec(spec);spec.loader.exec_module(gen)
         entry=json.loads((ROOT/'MCPs/servers.json').read_text())['servers']['hindsight']
-        self.assertEqual(entry['profiles'],['mac-admin','vmockbox-admin'])
+        self.assertEqual(entry['profiles'],['mac-admin','vmockbox-admin','devbox-admin'])
         self.assertEqual(entry['platforms'],['darwin','linux'])
         for client in entry['clients']:
             if client=='codex': result=gen.codex_server_config(entry,{'HOME':str(self.home)})

@@ -31,7 +31,7 @@ profiles:
     mode: read-write
     code_root: /srv/Code
     git_email: satyasaibhushan@gmail.com
-    fragments: [base.md, devbox.md]
+    fragments: [base.md, devbox.md, hindsight.md]
     mcps: default-allow
     skills: default-allow
   vmockbox-admin:
