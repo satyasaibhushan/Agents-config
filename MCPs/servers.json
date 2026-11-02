@@ -322,6 +322,21 @@
         "env": {"OPENAI_API_KEY": "${JEV_MCP_API_KEY}"}
       }
     },
+    "elicit": {
+      "clients": ["claude-code", "codex"],
+      "platforms": ["darwin", "linux"],
+      "profiles": ["mac-admin", "vmockbox-admin", "devbox-admin"],
+      "requires": {
+        "executables": ["node"],
+        "paths": ["${CODE_ROOT}/Personal/Elicit-MCP/cli/dist/main.js", "${HOME}/.config/elicit/env"]
+      },
+      "security": "Creates answer forms on the private relay elicit.bhushan.fun with the key in ~/.config/elicit/env, and compiles and runs submitted practice code locally in a temp dir with time and output limits",
+      "setup": "Clone Elicit-MCP under <code root>/Personal, run cli/install.sh with Node 22+, and copy ~/.config/elicit/env (mode 600) from a provisioned machine",
+      "config": {
+        "command": "node",
+        "args": ["${CODE_ROOT}/Personal/Elicit-MCP/cli/dist/main.js", "mcp"]
+      }
+    },
     "hindsight": {
       "clients": [
         "cursor",
