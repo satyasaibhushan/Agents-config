@@ -45,6 +45,7 @@
     "wizard": {"profiles": ["mac-admin", "devbox-admin", "vmockbox-admin"]},
     "zoom-out": {"profiles": ["mac-admin", "devbox-admin", "vmockbox-admin", "devbox-agent"]},
     "kairo-health-semantic-layer": {"profiles": ["mac-admin", "devbox-admin", "vmockbox-admin"]},
-    "migrate-memories": {"profiles": ["mac-admin", "devbox-admin", "vmockbox-admin"]}
+    "migrate-memories": {"profiles": ["mac-admin", "devbox-admin", "vmockbox-admin"]},
+    "qed-verify": {"profiles": ["mac-admin", "vmockbox-admin"]}
   }
 }
