@@ -53,6 +53,9 @@ that and say why.
 - Paste-ready ticket comments are short client-facing text with no internal
   framing. A screenshot is not verified status, and the issue key must match
   the one I asked about.
+- UI proposals use rendered product components and complete task states. Check
+  full-resolution captures for clipping and readability before publishing UX
+  recommendations. Keep media assets separate from the document size budget.
 - My explicit instructions take precedence over skill guidance. If a skill
   causes you to pause or leave requested work unfinished, link the exact
   SKILL.md, quote the rule, and explain why it applies. Do not treat your
@@ -76,6 +79,9 @@ The file `~/.t3/thread-webhook.env` defines `GROK_WEBHOOK_URL` and `GROK_WEBHOOK
 - Prefer established mechanisms. Use the repository's existing helpers,
   authentication, scripts, and validation paths before inventing a parallel
   workflow.
+- Before asking for credentials or an access location, discover relevant
+  connected tools and inspect the tools exposed in this session. Verify the
+  required authentication against the target before building an integration.
 - When a named integration is missing from the current branch, inspect the
   repository's other branches and recent commits before asking me to explain it.
 - When I name an external skill and its author, check the author's repository
