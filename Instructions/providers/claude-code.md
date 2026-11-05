@@ -30,19 +30,17 @@ Using Codex inside workflows and subagents (the model parameter only takes Claud
 
 ## Waiting on long work
 
-Sleep loops blocked agents for about 16 hours over a 30-day sample, and 25 of
-them ran into Bash's 10-minute ceiling.
+Sleep loops are the biggest avoidable wait we have: about 16 hours over 30
+days, and 25 of them ran into Bash's 10-minute ceiling.
 
-- A command you started with `run_in_background` notifies you when it exits.
-  Do other work or end the turn; in T3, call `t3_background_wait` with its
-  task ID. Never loop `sleep` over its output file, and never `pgrep` it.
-- For a test run you need before the next step, run it in the foreground with
-  an explicit `timeout`. Go to the background only when it can outlive the
-  ceiling.
-- Waiting on state the harness can't see (a pod, an HTTP endpoint, a log
-  marker): use one bounded loop with a deadline under the tool ceiling. The
-  loop exits on success, and also on the failure marker, so a crash surfaces
-  at once instead of at the deadline. Prefer the tool's own wait (for example
-  `devdock_wait`) over hand-written `kubectl` polling.
-- A deadline that passes is a finding: report what you were waiting for and
-  what you saw. Don't restart the same wait with a longer sleep.
+- If you started it with `run_in_background`, the harness tells you when it
+  exits. Keep working or end the turn. In T3, call `t3_background_wait` with
+  the task ID. Don't loop `sleep` over its output file and don't `pgrep` it.
+- Run tests in the foreground with an explicit `timeout`. Background them only
+  when they can run past the ceiling.
+- The harness can't watch a pod, an HTTP endpoint or a log line for you. Write
+  one loop with a deadline under the ceiling, and make it exit on the failure
+  marker too, so a crash shows up right away. If the tool has its own wait,
+  like `devdock_wait`, use that instead of polling `kubectl`.
+- If the deadline passes, report what you were waiting for and what you saw.
+  Don't run the same wait again with a longer sleep.
