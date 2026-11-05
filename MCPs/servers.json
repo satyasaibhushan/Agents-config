@@ -249,34 +249,6 @@
         }
       }
     },
-    "db-devbox": {
-      "codex": { "default_tools_approval_mode": "approve" },
-      "clients": [
-        "claude-code",
-        "codex"
-      ],
-      "platforms": [
-        "linux"
-      ],
-      "profiles": [
-        "devbox-admin",
-        "vmockbox-admin",
-        "devbox-agent"
-      ],
-      "requires": {
-        "paths": [
-          "/usr/local/bin/vmock-mcp",
-          "/run/vmock-mcp-db.sock"
-        ]
-      },
-      "config": {
-        "type": "stdio",
-        "command": "/usr/local/bin/vmock-mcp",
-        "args": [
-          "db"
-        ]
-      }
-    },
     "es-devbox": {
       "codex": { "default_tools_approval_mode": "approve" },
       "clients": [
