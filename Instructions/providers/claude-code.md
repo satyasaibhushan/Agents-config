@@ -24,6 +24,25 @@ How to apply:
 Using Codex inside workflows and subagents (the model parameter only takes Claude models, so use a wrapper):
 - Spawn a thin Claude wrapper agent with `model: 'sonnet', effort: 'low'` whose prompt instructs it to write a self-contained codex prompt, run `codex exec` via Bash, and return the report (use `schema` on the wrapper to get structured output back).
 - Always label these agents with a `Codex:` prefix, e.g. `{label: 'Codex:review-auth'}`: the workflow UI shows the wrapper's Claude model, so the label is the only indication the real worker is Codex. Do not claim a specific model unless verified for that run.
-- Codex runs can exceed Bash's 10-minute timeout: pass an explicit timeout, or run in the background and poll for the report file.
+- Codex runs can exceed Bash's 10-minute timeout: pass an explicit timeout, or run in the background and wait for its completion notice (see Waiting on long work).
 - Parallel agents that edit files (Claude or Codex) must use `isolation: 'worktree'` or run serially, so their edits don't collide in the shared checkout. If they did share a tree, re-run the combined checks and diff `git status` against each agent's claimed files.
 - Workflow token budgets only count Claude tokens; codex work is free and invisible to `budget.spent()`.
+
+## Waiting on long work
+
+Sleep loops blocked agents for about 16 hours over a 30-day sample, and 25 of
+them ran into Bash's 10-minute ceiling.
+
+- A command you started with `run_in_background` notifies you when it exits.
+  Do other work or end the turn; in T3, call `t3_background_wait` with its
+  task ID. Never loop `sleep` over its output file, and never `pgrep` it.
+- For a test run you need before the next step, run it in the foreground with
+  an explicit `timeout`. Go to the background only when it can outlive the
+  ceiling.
+- Waiting on state the harness can't see (a pod, an HTTP endpoint, a log
+  marker): use one bounded loop with a deadline under the tool ceiling. The
+  loop exits on success, and also on the failure marker, so a crash surfaces
+  at once instead of at the deadline. Prefer the tool's own wait (for example
+  `devdock_wait`) over hand-written `kubectl` polling.
+- A deadline that passes is a finding: report what you were waiting for and
+  what you saw. Don't restart the same wait with a longer sleep.
