@@ -24,23 +24,35 @@ How to apply:
 Using Codex inside workflows and subagents (the model parameter only takes Claude models, so use a wrapper):
 - Spawn a thin Claude wrapper agent with `model: 'sonnet', effort: 'low'` whose prompt instructs it to write a self-contained codex prompt, run `codex exec` via Bash, and return the report (use `schema` on the wrapper to get structured output back).
 - Always label these agents with a `Codex:` prefix, e.g. `{label: 'Codex:review-auth'}`: the workflow UI shows the wrapper's Claude model, so the label is the only indication the real worker is Codex. Do not claim a specific model unless verified for that run.
-- Codex runs can exceed Bash's 10-minute timeout: pass an explicit timeout, or run in the background and wait for its completion notice (see Waiting on long work).
+- Codex runs can exceed Bash's 10-minute timeout (600s). In a wrapper subagent, run `codex exec` in the foreground with an explicit Bash `timeout`. Background it only from the main agent, which is still running when the completion notice arrives (see Waiting on long work).
 - Parallel agents that edit files (Claude or Codex) must use `isolation: 'worktree'` or run serially, so their edits don't collide in the shared checkout. If they did share a tree, re-run the combined checks and diff `git status` against each agent's claimed files.
 - Workflow token budgets only count Claude tokens; codex work is free and invisible to `budget.spent()`.
 
 ## Waiting on long work
 
-Sleep loops are the biggest avoidable wait we have: about 16 hours over 30
-days, and 25 of them ran into Bash's 10-minute ceiling.
+Don't wait in `sleep` loops. They block the turn and often hit Bash's
+10-minute limit (600s) with nothing to show for it. A lone `sleep` followed by
+another check is the same loop.
 
-- If you started it with `run_in_background`, the harness tells you when it
-  exits. Keep working or end the turn. In T3, call `t3_background_wait` with
-  the task ID. Don't loop `sleep` over its output file and don't `pgrep` it.
-- Run tests in the foreground with an explicit `timeout`. Background them only
-  when they can run past the ceiling.
-- The harness can't watch a pod, an HTTP endpoint or a log line for you. Write
-  one loop with a deadline under the ceiling, and make it exit on the failure
-  marker too, so a crash shows up right away. If the tool has its own wait,
-  like `devdock_wait`, use that instead of polling `kubectl`.
-- If the deadline passes, report what you were waiting for and what you saw.
-  Don't run the same wait again with a longer sleep.
+- If you started it with `run_in_background`, Claude Code tells you when it
+  exits. Do work that doesn't need its result. If nothing else can move, end
+  the turn and pick up on the notice; in T3, call `t3_background_wait` with
+  the task ID first. A subagent whose caller needs the result in this run
+  should run it in the foreground instead. Never wait for a background task
+  from Bash: no `sleep` loop over its output file, no `pgrep`, `ps` or
+  `kill -0` loop, no loop for a marker in its output. Read the output file
+  once, after the notice.
+- Run a test in the foreground with an explicit `timeout` only when it
+  reliably finishes well under 600s, like one file or one class. Full suites,
+  and any suite that has run long under load, go through `run_in_background`.
+  A foreground run that passes 600s just gets killed.
+- For a pod, an HTTP endpoint or a log line, use the tool's own wait first:
+  `kubectl wait` or `kubectl rollout status`, `devdock_wait` where it exists,
+  or the Monitor tool for logs. Give it a timeout under 600s (for example
+  `--timeout=540s`). For PR checks in T3, use `watch_pull_request`. Only if
+  nothing fits, write one loop with a deadline well under 600s, checks at
+  least 20s apart, and an exit on failure (CrashLoopBackOff, Error, Failed)
+  so a crash shows up at once.
+- If the deadline passes, show the last status (pod phase, HTTP code, last
+  log lines) and whether it was still moving. If it was, one more wait is
+  fine; say what changed. If nothing changed, stop and report.
