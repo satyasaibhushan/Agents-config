@@ -181,6 +181,12 @@ Apply the highest rung in scope; otherwise name it in one line at the end.
 - Commits use short imperative English describing observable behaviour, with
   no trailing period. Do not use Conventional Commits unless the repo's own
   instructions require a convention; then follow the repo.
+- Commit incrementally on the working branch: once a self-contained step is
+  implemented and its relevant checks pass, commit it before starting the
+  next step. Fixes found during verification get their own commits. This
+  does not authorize pushing; push only when asked or when the task names a
+  push. An explicit stop point such as "don't commit yet", or a rule to leave
+  a repo uncommitted, takes precedence.
 - PR descriptions lead with the problem in my words, then what changed. Not a
   file inventory.
 
