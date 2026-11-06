@@ -51,10 +51,14 @@ A single claim is a one-entry file, or `pnpm --dir ~/Code/Personal/QED qed run -
 - `proved` / `refuted` are verdicts about the app. A refuted claim is a finding, not a QED failure: report it.
 - `inconclusive` says nothing about the app. Read `reason` in the manifest. A tier or browser error is infrastructure:
   rerun once. A route that could not take the data, or a missing fixture, needs a better claim or a hint, not a retry loop.
+- `proved verdict set aside: ...` means the judging tier quoted text the run never saw. Treat it like any inconclusive run, never as a pass.
+- `final-page.aria.yml` in the run directory is the last page as text. Read it, not the video, to see what the app showed.
+- To debug an inconclusive claim, rerun it once with `"trace": true` (or `--trace`) and open `trace.zip` with
+  `npx playwright show-trace`. Traces slow runs, so leave them off for normal runs. They hold session cookies, so never attach one.
 - Never edit the feature map, routes or hints to make a claim pass.
 
 ## Evidence for a PR or ticket
 
-Paste `evidence.md` as is: one row per claim with the verdict, the run's own reason, the time and the paths of the video and
-manifest. Attach the video or a screenshot from the run directory's `screens/` when the reader cannot open local paths. Never
+Paste `evidence.md` as is: one row per claim with the verdict, the run's own reason with the page text it quoted, the time,
+and the paths of the video, page snapshot and manifest. Attach the video or a screenshot from the run directory's `screens/` when the reader cannot open local paths. Never
 paste secrets, `.env` values or session files.
