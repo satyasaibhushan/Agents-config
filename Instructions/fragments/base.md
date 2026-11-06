@@ -79,6 +79,10 @@ The file `~/.t3/thread-webhook.env` defines `GROK_WEBHOOK_URL` and `GROK_WEBHOOK
 - Prefer established mechanisms. Use the repository's existing helpers,
   authentication, scripts, and validation paths before inventing a parallel
   workflow.
+- When a job search names an employer careers URL, constrain recommendations
+  to that source. Verify each role appears in its current results and has an
+  application control. Read closure text in context before marking a vacancy
+  closed; hidden save-job accessibility text is not vacancy status.
 - Before asking for credentials or an access location, discover relevant
   connected tools and inspect the tools exposed in this session. Verify the
   required authentication against the target before building an integration.
@@ -138,6 +142,13 @@ The file `~/.t3/thread-webhook.env` defines `GROK_WEBHOOK_URL` and `GROK_WEBHOOK
   a PR.
 - Never discard, overwrite, stage, commit, or clean up unrelated existing
   changes.
+- Never rebase, check out another branch, or cherry-pick in a worktree used
+  by a running server or test run. Stop the run first, or use a separate
+  worktree.
+- For remote process cleanup, identify explicit PIDs with `ss`, `lsof`, or a
+  verified `ps` listing and terminate only the intended processes. Avoid
+  `pkill -f` and `pgrep -f` patterns that can match the SSH command carrying
+  the cleanup itself.
 
 ## Corrections
 
@@ -203,10 +214,12 @@ Work repos (`~/Code/backend/`, `~/Code/frontend/`):
 - `git-uat` PRs into uat, `git-pr` into primary. If missing from your shell,
   say so; don't improvise a push.
 
-Personal repos (`~/Code/Personal/`): none of the above machinery. Working
-directly on `main` is fine when requested or already established, one extra
-branch at most otherwise. Inspect existing changes and preserve unrelated
-work; do not assume existing changes belong to the task. Planning and spec
+Personal repos (`~/Code/Personal/`): none of the above machinery. When starting
+new work, default to direct commits on `main` without a PR unless the repo's
+own instructions say otherwise or a branch or PR is explicitly requested.
+Use at most one extra branch; do not move work off a branch the session was
+given. Inspect existing changes and preserve unrelated work; do not assume
+existing changes belong to the task. Planning and spec
 docs committed there are styled standalone `.html`; `.md` only for agent input
 briefs.
 
