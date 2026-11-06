@@ -26,7 +26,24 @@ The HTTP header helper checks owner/mode and exact server/endpoint; its output
 belongs only to the client's private pipe. Never run the header helper as a
 shell diagnostic. The stdio bridge uses the locked official SDK, restricts
 requests to the endpoint, refuses redirects, exposes only `submit_feedback`,
-and never retries submissions or stores authentication state.
+and never retries submissions automatically or stores authentication state.
+The local tool catalog is available even when remote authentication or discovery
+fails; a sanitized startup warning goes to stderr, and calls report the failure.
+
+Valid submissions are first retained under `~/.config/hindsight/outbox` in an
+owner-only directory with 0600 files. The queue holds at most 100 entries, each
+at most 12 KB. It refuses secret-looking content, conflicting reuse of a
+`request_id`, unsafe paths and a full queue. Successful delivery and permanent
+remote rejection remove the entry. Transport
+failures and the remote storage-unavailable response preserve its original
+payload and ID. Empty/no-op feedback is rejected before queuing.
+Nothing is replayed automatically. After fixing access, explicitly replay one
+entry with `~/.local/bin/hindsight-mcp --replay REQUEST_ID`. Replays use the
+normal credential helper and canonical endpoint. Do not reuse an ID for changed
+feedback or switch ingestion identities when replaying. Replay output reports
+status only, never the stored feedback or authentication headers.
+
+Offline bridge checks: `node --test MCPs/hindsight/bridge.test.mjs`.
 
 Ordinary client launches load authentication automatically, including GUI
 launches. No shell exports, daily wrappers, login hooks, or approval changes
