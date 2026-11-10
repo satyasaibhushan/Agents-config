@@ -341,6 +341,29 @@
         "url": "https://hindsight.bhushan.fun/api/mcp",
         "headersHelper": "${HOME}/.local/bin/hindsight-auth-headers"
       }
+    },
+    "nook": {
+      "platforms": ["darwin"],
+      "clients": ["cursor", "claude-code", "codex"],
+      "profiles": ["mac-admin"],
+      "security": "drives the running Nook browser: reads pages, runs JavaScript in them, and opens, closes and pins tabs in its Agent space with the open space's logins",
+      "requires": {
+        "env": ["NOOK_MCP_TOKEN"],
+        "paths": ["${HOME}/Library/Application Support/com.gstudios.nook/dev-mcp-token"]
+      },
+      "setup": "in Nook settings, Developer: turn on developer mode and the browser control server, then copy ~/Library/Application Support/com.gstudios.nook/dev-mcp-token into NOOK_MCP_TOKEN",
+      "config": {
+        "type": "http",
+        "url": "http://127.0.0.1:47823/mcp",
+        "headers": {
+          "Authorization": "Bearer ${NOOK_MCP_TOKEN}"
+        }
+      },
+      "codex": {
+        "http_headers": {
+          "Authorization": "Bearer ${NOOK_MCP_TOKEN}"
+        }
+      }
     }
   }
 }

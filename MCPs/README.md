@@ -101,6 +101,17 @@ Feedback integration (mac-admin, vmockbox-admin) uses a separate owner-only key 
 `mcp.env` or literal resolved headers. See [setup and runtime](hindsight/README.md).
 The dedicated installer also covers existing hub profiles and OpenCode.
 
+## Nook
+
+The `nook` server is the control server built into the Nook browser, on
+`mac-admin` only. It listens on `127.0.0.1:47823` while Nook is running, and
+only after developer mode and the browser control server are turned on in
+Nook's Developer settings. Nook writes its bearer token to
+`~/Library/Application Support/com.gstudios.nook/dev-mcp-token` (mode 0600) on
+first start and reuses it; copy that value into `NOOK_MCP_TOKEN` in the private
+MCP env file. The server stays out of scope until the token file and the
+variable exist. Clients report it as failed whenever Nook is not running.
+
 ## JEV-MCP
 
 The `jev` server exposes a generic `decide` tool on `mac-admin` and
