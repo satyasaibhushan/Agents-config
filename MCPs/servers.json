@@ -346,7 +346,7 @@
       "platforms": ["darwin"],
       "clients": ["cursor", "claude-code", "codex"],
       "profiles": ["mac-admin"],
-      "security": "drives the running Nook browser: reads pages, runs JavaScript in them, and opens, closes and pins tabs in its Agent space with the open space's logins",
+      "security": "drives the running Nook browser: reads pages, runs JavaScript in them, and opens and closes its own tabs in the Agent space, signed out or with a one-way copy of a named space's cookies",
       "requires": {
         "env": ["NOOK_MCP_TOKEN"],
         "paths": ["${HOME}/Library/Application Support/com.gstudios.nook/dev-mcp-token"]
