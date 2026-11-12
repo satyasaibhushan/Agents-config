@@ -46,13 +46,27 @@ get-url-from-ssh() {
   echo "${url2}/compare/${branch}...satyasaibhushan:$(git rev-parse --abbrev-ref HEAD)?expand=1"
 }
 
+# Bundle id of the macOS default browser, read from the LaunchServices https handler.
+default-browser() {
+  defaults read com.apple.LaunchServices/com.apple.launchservices.secure LSHandlers 2>/dev/null |
+    awk '/LSHandlerRoleAll/ { role = $3 }
+      /LSHandlerURLScheme = https;/ { gsub(/[";]/, "", role); print role; exit }
+      /}/ { role = "" }'
+}
+
+# browser follows the system default unless a local startup file sets it.
+case "${OSTYPE:-}" in
+  darwin*) browser=${browser:-$(default-browser)} ;;
+esac
+
 open-repo-url() {
   if [ "$(uname -s)" = Darwin ]; then
-    if [ -n "${browser:-}" ]; then
-      open -a "$browser" "$1"
-    else
-      open "$1"
-    fi
+    case "${browser:-}" in
+      "") open "$1" ;;
+      # Bundle ids name exactly one app; app names can match several copies.
+      *.*) open -b "$browser" "$1" ;;
+      *) open -a "$browser" "$1" ;;
+    esac
   elif [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && command -v xdg-open >/dev/null 2>&1; then
     xdg-open "$1"
   else

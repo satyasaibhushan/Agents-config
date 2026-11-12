@@ -52,8 +52,9 @@ Use `case "$(uname -s)"` when a shared helper needs different platform behavior.
 The shared file includes Git, DevSpace, Kubernetes, repository navigation, and
 C++ helpers migrated from the Mac startup files. Repository shortcuts use
 `CODE_ROOT`, defaulting to `/srv/Code` when present or `~/Code` otherwise.
-Git PR helpers open the configured browser on macOS, use `xdg-open` on Linux
-desktops, and print the URL in headless sessions. Commands such as `git`,
+Git PR helpers open the macOS default browser (or `browser`, when a local
+startup file sets it), use `xdg-open` on Linux desktops, and print the URL in
+headless sessions. Commands such as `git`,
 `devspace`, `kubectl`, and `g++` still need to be installed where used.
 
 ### Personal guidelines fork
