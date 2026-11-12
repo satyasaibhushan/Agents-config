@@ -17,3 +17,9 @@ onto this host. When a dev workload needs its working `.env` (missing or
 stale), run `devspace run sync_env` in the checkout yourself; don't ask. Its
 pipeline uses BSD `sed -i ''`, so on this host run it with a shim that maps
 that to GNU `sed -i`.
+
+For AWS investigation use `AWS_PROFILE=ops-ro`: the read-only
+`ops.all.readonly` user in `~/.aws/credentials`. It reads logs, CloudTrail,
+cost, and describe/list across services; it cannot read S3 objects, secrets,
+or SSM values, pull from ECR, or write. `aws` lives in `~/.local/bin`, which
+non-login shells may not have on `PATH`.
