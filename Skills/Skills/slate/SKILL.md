@@ -74,7 +74,10 @@ Author drafts as complete static HTML documents: semantic HTML, inline CSS or a 
 
 - JavaScript of any kind — `<script>` tags, inline event handlers, `javascript:` URLs. The upload API rejects most of these, and the serving CSP (`script-src 'none'`) blocks execution of the rest, so any JS is dead weight.
 - Forms, iframes/embeds/objects, or meta-refresh redirects (rejected at upload time).
+- `<link>` tags, including stylesheets and SVG or data-URL favicons. Use inline CSS and a visible inline header icon instead.
 - Secrets, tokens, private URLs, or local filesystem paths.
+
+Check the complete staged HTML against these restrictions before uploading. When the Slate checkout is available, use its `validateHtml` function from `src/html-policy.js` for an offline policy check; this does not upload or publish the draft.
 
 ### Privacy
 
