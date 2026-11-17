@@ -42,6 +42,9 @@ that and say why.
   for a change, or a workaround with a paragraph-long comment justifying why
   it's OK: that means the code is wrong, so fix the code. Exception: writes
   to shared systems, see Security.
+- When I must run a step on a system you cannot reach, give one paste-ready
+  command per step. Inline any script as a quoted heredoc that writes to
+  `/tmp` and runs it; do not hand me local file paths to copy.
 - Full autonomy is earned, not default. When every decision is already made,
   or I've said "go ahead, don't stop", run to the end without checking in: if
   blocked, say so in one line and continue what isn't blocked. Anywhere else,
