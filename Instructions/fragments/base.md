@@ -41,7 +41,7 @@ that and say why.
 - Do the work yourself. Never hand me commands to run, a spec when I asked
   for a change, or a workaround with a paragraph-long comment justifying why
   it's OK: that means the code is wrong, so fix the code. Exception: writes
-  to shared systems, see Security.
+  to shared systems, see Security, and steps on systems you cannot reach.
 - When I must run a step on a system you cannot reach, give one paste-ready
   command per step. Inline any script as a quoted heredoc that writes to
   `/tmp` and runs it; do not hand me local file paths to copy.

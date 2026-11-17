@@ -24,7 +24,7 @@ For production logs, inspect env values for the matched services first. Treat pr
 
 Search every replica and revision relevant to the window. Absence from one worker's log stream is not absence, and queue depth zero does not prove completion. Facet by task, container, host, or revision fields when they are available.
 
-Before concluding an identifier has no matches, search its literal and URL-encoded forms, then a distinctive fragment. Derive stable account IDs from matching records and correlate a bounded time window using those IDs. A shared IP alone does not establish identity. Exhaust these telemetry checks before asking for browser evidence.
+Before concluding an identifier has no matches, search its literal and URL-encoded forms, then a distinctive fragment. Before using a fragment match for identity, verify the full identifier or independently corroborate its account ID. Derive stable account IDs from those verified records and correlate a bounded time window using those IDs. A shared IP alone does not establish identity. Exhaust these telemetry checks before asking for browser evidence.
 
 Before proposing a code or provider-endpoint change, extract the exact exception class, HTTP status, message, and provider response. Keep missing evidence explicit instead of inferring it from a wrapper exception.
 
