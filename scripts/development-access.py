@@ -35,9 +35,13 @@ settings = json.loads(path.read_text()) if path.exists() else {}
 permissions = settings.setdefault('permissions', {})
 permissions['allow'] = list(dict.fromkeys([v for v in permissions.get('allow', []) if v != 'mcp__*'] + policy['allow']))
 permissions['additionalDirectories'] = list(dict.fromkeys(permissions.get('additionalDirectories', []) + policy['directories']))
-# Secret-file deny rules use // anchors so they hold in every project, not just the cwd.
-deny_rules = ['Read(//'+glob+')' for glob in policy['deny_read']]
-permissions['deny'] = list(dict.fromkeys(permissions.get('deny', []) + deny_rules))
+# Read/Edit denies use root anchors. Drop the old managed rule so example files
+# become readable on accounts that already installed the development policy.
+read_globs = policy['deny_read'] + policy['deny_read_and_edit']
+deny_rules = ['Read(//'+glob+')' for glob in read_globs]
+deny_rules += ['Edit(//'+glob+')' for glob in policy['deny_read_and_edit']]
+existing_denies = [rule for rule in permissions.get('deny', []) if rule != 'Read(//**/.env*)']
+permissions['deny'] = list(dict.fromkeys(existing_denies + deny_rules))
 write(path, json.dumps(settings, indent=2)+'\n')
 path = home / '.codex/config.toml'
 content = path.read_text() if path.exists() else ''
@@ -51,7 +55,7 @@ serialize = api['load_genmod']().toml_value
 # Linux codex expands deny globs before sandbox start and rejects root-anchored ones,
 # so each glob is anchored under every managed directory.
 filesystem = {d: 'write' for d in policy['directories']}
-filesystem.update({d+'/'+glob: 'deny' for d in policy['directories'] for glob in policy['deny_read']})
+filesystem.update({d+'/'+glob: 'deny' for d in policy['directories'] for glob in read_globs})
 # Bound the pre-start scan: unbounded it adds ~7s per session on /srv/Code; real secrets sit at depth <= 7.
 filesystem['glob_scan_max_depth'] = 8
 content = 'default_permissions = "development"\n' + content.rstrip('\n') + '\n'

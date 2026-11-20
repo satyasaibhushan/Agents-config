@@ -265,6 +265,10 @@ another machine owns the deployment, move it with devdock instead.
 
 Keep API keys in a service's gitignored working `.env` after test runs; never
 strip them. `.env.example` lists names only, never values.
+Use `env-keys <file> [glob]` for names and `env-hosts <file>` for masked endpoints.
+Use `env-set <file> <KEY>` with `--replace-suffix <old> <new>` for routing edits,
+`--value <value>` for public values, or `--stdin` for a value from a secret source.
+For a DevSpace replica, run `devspace run sync_env` in its checkout.
 
 Read-only DB profiles such as `live.read` cannot `CREATE TEMPORARY TABLE`;
 inline lists with `IN (...)` or `UNION ALL SELECT`.
