@@ -205,14 +205,26 @@ Provider instruction files render as the concatenation of the active profile's
 ## Development permissions
 
 `Permissions/development.json` owns the approved development tool and directory
-profile, plus the `deny_read` globs that keep secret files (`.env*`, keys, certs)
-out of the agent's context. Claude Code gets them as `Read(//glob)` deny rules;
+profile, plus globs that deny raw access to secret files. The dotenv globs
+match names containing `.env` except names ending in `.env.example`. They
+spell out the exception using character classes because the providers share
+no anchored negation syntax. Claude Code gets `Read(//glob)` deny rules
+and `Edit(//glob)` denies for dotenv files.
+
 Codex gets a `development` permissions profile (`default_permissions`), which
 replaces `sandbox_mode` and `[sandbox_workspace_write]` and needs codex-cli
 0.154 or later to enforce the read denies. Deny globs are anchored under each
-managed directory because Linux codex rejects root-anchored globs. Apply it with `python3 scripts/development-access.py` after selecting a
-devbox profile. It preserves unrelated settings, renders instructions, and links
-missing skills through the existing reconciler.
+managed directory because Linux codex rejects root-anchored globs. Apply it
+with `python3 scripts/development-access.py` after selecting a devbox profile.
+It preserves unrelated settings, renders instructions, and links missing skills
+through the existing reconciler.
+
+`scripts/install` puts `env-keys`, `env-hosts`, and `env-set` on PATH.
+`env-hosts` shows the scheme, host, and port of endpoint variables. It masks
+credentials and omits URL paths, queries, and fragments. Use `env-set --stdin`
+with an approved secret source so the value stays out of the command line.
+The command allowlist applies at the tool level. A filesystem deny also
+prevents these shell helpers from opening the file.
 
 The restricted account can edit the shared `/srv/Code` checkouts used by DevDock.
 Existing files use an explicit user ACL; directory defaults preserve that access

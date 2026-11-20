@@ -12,6 +12,7 @@ START = '# >>> shared shell config >>>'
 END = '# <<< shared shell config <<<'
 # shared.sh functions that agents call from non-interactive shells.
 HELPERS = ('git-reset-branch', 'git-pr', 'git-uat')
+ENV_HELPERS = ('env-keys', 'env-hosts', 'env-set')
 
 
 def install(home, source, zsh_dir):
@@ -63,9 +64,9 @@ def install(home, source, zsh_dir):
         print('backup: ' + str(backup))
 
 
-def link_helpers(bin_dir, runner):
+def link_helpers(bin_dir, runner, names=HELPERS):
     bin_dir.mkdir(parents=True, exist_ok=True)
-    for name in HELPERS:
+    for name in names:
         link = bin_dir / name
         if link.exists() and not link.is_symlink():
             print('skipped: ' + str(link) + ' is not a symlink')
@@ -81,3 +82,4 @@ if __name__ == '__main__':
     source = Path(__file__).resolve().parents[1] / 'Shell/shared.sh'
     install(home, source, Path(os.environ.get('ZDOTDIR') or home))
     link_helpers(home / '.local/bin', source.parent / 'run-helper')
+    link_helpers(home / '.local/bin', source.parent / 'env-helper', ENV_HELPERS)

@@ -1,0 +1,193 @@
+#!/usr/bin/env python3
+"""Inspect or update dotenv assignments without sourcing or dumping the file."""
+
+import argparse
+import fcntl
+from fnmatch import fnmatchcase
+import os
+from pathlib import Path
+import re
+import stat
+import sys
+import tempfile
+from urllib.parse import urlsplit
+
+
+KEY = r'[A-Za-z_][A-Za-z0-9_]*'
+ENTRY = re.compile(
+    rf'[ \t]*(?:export[ \t]+)?(?P<key>{KEY})[ \t]*=[ \t]*'
+    r'''(?P<value>'[^']*'|"(?:[^"\\]|\\[^\r\n])*"|(?!['"])[^ \t\r\n#]*)'''
+    r'[ \t]*(?:#[^\r\n]*)?(?:\r?\n|\Z)'
+)
+COMMENT = re.compile(r'[ \t]*(?:#[^\r\n]*)?(?:\r?\n|\Z)')
+MASK = '[redacted]'
+
+
+class EnvError(Exception):
+    pass
+
+
+class Parser(argparse.ArgumentParser):
+    def error(self, message):
+        # argparse error details can include a literal value passed by the caller.
+        self.exit(2, f'{self.prog}: invalid arguments (see --help)\n')
+
+
+def arguments(command):
+    parser = Parser()
+    parser.add_argument('file', type=Path)
+    if command == 'env-keys':
+        parser.add_argument('pattern', nargs='?', default='*')
+    elif command == 'env-set':
+        parser.add_argument('key')
+        mode = parser.add_mutually_exclusive_group(required=True)
+        mode.add_argument('--value')
+        mode.add_argument('--replace-suffix', nargs=2, metavar=('OLD', 'NEW'))
+        mode.add_argument('--stdin', action='store_true')
+    args = parser.parse_args()
+    if not re.fullmatch(r'.*\.env(?:\..*)?', args.file.name):
+        raise EnvError('expected a dotenv filename')
+    if not str(args.file).isprintable():
+        raise EnvError('filename contains non-printable characters')
+    if command == 'env-set' and not re.fullmatch(KEY, args.key):
+        raise EnvError('invalid variable name')
+    return args
+
+
+def assignments(content):
+    offset = int(content.startswith('\ufeff'))
+    while offset < len(content):
+        entry = ENTRY.match(content, offset)
+        if entry:
+            if entry['value'].endswith('\\'):
+                raise EnvError('unsupported dotenv continuation')
+            yield entry
+        else:
+            entry = COMMENT.match(content, offset)
+            if not entry:
+                raise EnvError('unsupported dotenv syntax')
+        offset = entry.end()
+
+
+def endpoint(raw):
+    value = raw[1:-1] if raw.startswith(("'", '"')) else raw
+    if not value or not value.isprintable() or any(c.isspace() for c in value):
+        return MASK
+    has_scheme = re.match(r'[A-Za-z][A-Za-z0-9+.-]*://', value)
+    try:
+        url = urlsplit(value if has_scheme or value.startswith('//') else '//' + value)
+        host, port = url.hostname, url.port
+    except ValueError:
+        return MASK
+    if not host or not re.fullmatch(r'[A-Za-z0-9._-]+|[A-Fa-f0-9:.]+', host):
+        return MASK
+    prefix = url.scheme + '://' if has_scheme else '//' if value.startswith('//') else ''
+    userinfo = MASK + '@' if '@' in url.netloc else ''
+    address = '[' + host + ']' if ':' in host else host
+    return prefix + userinfo + address + (f':{port}' if port is not None else '')
+
+
+def literal(value):
+    if value and not value.isprintable():
+        raise EnvError('expected a single printable value')
+    if re.fullmatch(r'[A-Za-z0-9_./:@%+,=-]*', value):
+        return value
+    if "'" not in value:
+        return "'" + value + "'"
+    if '\x60' in value:
+        raise EnvError('value cannot be safely quoted')
+    return '"' + re.sub(r'[\\"$]', r'\\\g<0>', value) + '"'
+
+
+def update(content, entries, args):
+    matches = [entry for entry in entries if entry['key'] == args.key]
+    if len(matches) > 1:
+        raise EnvError('variable has duplicate assignments')
+    entry = matches[0] if matches else None
+    value = args.value
+    if args.stdin:
+        value = sys.stdin.read().removesuffix('\n').removesuffix('\r')
+    if args.replace_suffix:
+        if entry is None:
+            raise EnvError('variable is missing')
+        old, new = args.replace_suffix
+        raw = entry['value']
+        if raw.startswith("'"):
+            raw = raw[1:-1]
+        else:
+            if '\\' in raw or '$' in raw:
+                raise EnvError('suffix replacement requires a literal value')
+            if raw.startswith('"'):
+                raw = raw[1:-1]
+        if not old or not raw.endswith(old):
+            raise EnvError('value does not end with the requested suffix')
+        value = raw[:-len(old)] + new
+    rendered = literal(value)
+    if entry is not None:
+        start, end = entry.span('value')
+        if start == end and content[end:end + 1] == '#':
+            rendered += ' '
+        return content[:start] + rendered + content[end:]
+
+    newline = '\r\n' if '\r\n' in content else '\n'
+    separator = newline if content.removeprefix('\ufeff') and not content.endswith('\n') else ''
+    return content + separator + args.key + '=' + rendered + newline
+
+
+def replace(path, content, original):
+    fd, temp = tempfile.mkstemp(dir=path.parent, prefix='.env-set-')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8', newline='') as stream:
+            stream.write(content)
+            stream.flush()
+            metadata = os.fstat(stream.fileno())
+            if (metadata.st_uid, metadata.st_gid) != (original.st_uid, original.st_gid):
+                os.fchown(stream.fileno(), original.st_uid, original.st_gid)
+            os.fchmod(stream.fileno(), stat.S_IMODE(original.st_mode))
+            os.fsync(stream.fileno())
+        current = path.lstat()
+        if not os.path.samestat(current, original) or current.st_ctime_ns != original.st_ctime_ns:
+            raise EnvError('file changed during update')
+        os.replace(temp, path)
+    finally:
+        Path(temp).unlink(missing_ok=True)
+
+
+def run(command, args):
+    while True:
+        fd = os.open(args.file, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, encoding='utf-8', newline='') as stream:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise EnvError('expected a regular dotenv file')
+            if command == 'env-set':
+                fcntl.flock(fd, fcntl.LOCK_EX)
+                original = os.fstat(fd)
+                # A concurrent env-set can replace the inode while this lock waits.
+                if not os.path.samestat(original, args.file.lstat()):
+                    continue
+            content = stream.read()
+            entries = list(assignments(content))
+            if command == 'env-set':
+                replace(args.file, update(content, entries, args), original)
+                print(f'Updated {args.key} in {args.file}')
+                return
+        values = {entry['key']: entry['value'] for entry in entries}
+        for key, value in values.items():
+            if command == 'env-hosts':
+                safe = endpoint(value) if key.endswith(('_URL', '_HOST', '_BASE')) else MASK
+                print(f'{key}={safe}')
+            elif fnmatchcase(key, args.pattern):
+                print(key)
+        return
+
+
+if __name__ == '__main__':
+    command = Path(sys.argv[0]).name
+    if command not in ('env-keys', 'env-hosts', 'env-set'):
+        sys.exit('Invoke as env-keys, env-hosts, or env-set')
+    try:
+        run(command, arguments(command))
+    except EnvError as error:
+        sys.exit(f'{command}: {error}')
+    except (OSError, UnicodeError):
+        sys.exit(f'{command}: unable to access dotenv file (symlinks are refused)')
