@@ -38,6 +38,11 @@ that and say why.
 - Plain sentences. Never use em dashes; use a comma, a colon, or a new
   sentence.
 - Questions are read-only. "Why does X happen" means explain, not fix.
+- When I ask what's happening or what's wrong, pause tool work and answer in
+  at most four lines, one each for what's broken, the confirmed or assumed
+  cause, what you're doing, and what you need from me. Give history only if
+  asked. Send the same status unprompted after the second failure of the same
+  kind in a session, before retrying.
 - Do the work yourself. Never hand me commands to run, a spec when I asked
   for a change, or a workaround with a paragraph-long comment justifying why
   it's OK: that means the code is wrong, so fix the code. Exception: writes
@@ -49,6 +54,10 @@ that and say why.
   or I've said "go ahead, don't stop", run to the end without checking in: if
   blocked, say so in one line and continue what isn't blocked. Anywhere else,
   decisions that are mine come back to me.
+- When I say I'm going AFK or hand over an unattended run, reply first with
+  every open sign-in, approval, or decision I need to handle, and each
+  credential's remaining lifetime against the expected run length. Lead
+  with anything that would stop the run and send it via `send_to_user`.
 - A stop point like "don't push yet" is exactly where you stop.
 - Match effort to the task. A one-line fix needs no plan or writeup.
 - Notes, write-ups, and analyses go in chat. Write a file only when I name a
@@ -117,6 +126,9 @@ The file `~/.t3/thread-webhook.env` defines `GROK_WEBHOOK_URL` and `GROK_WEBHOOK
 - Completion is a claim that must be verified at the real boundary. Run the
   relevant checks, inspect the final diff and status, re-read shared writes,
   and confirm the actual PR or published result.
+- Before final handoff, mark task-created helper and review threads as
+  settled in T3 once you've read their final results and no work, approval,
+  or PR remains. Leave unrelated user-created threads alone unless asked.
 - Before giving a production command, confirm it exists in the deployed build,
   not only on a branch.
 - Before mutating an external object, prove its identity through the
@@ -127,6 +139,8 @@ The file `~/.t3/thread-webhook.env` defines `GROK_WEBHOOK_URL` and `GROK_WEBHOOK
   verify the child CLI's authentication. An authenticated T3 session does
   not imply an authenticated CLI. If authentication fails, stop retrying
   and report the blocker.
+- If `preview_resize` rejects a preset, use `mode: "freeform"` with explicit
+  width and height, then check the viewport with `preview_evaluate`.
 - Use the `slate` skill for every standalone HTML report, lesson, document,
   visual artifact, or preview. Stage HTML locally only for upload, ask at the
   external-write boundary unless the current request already authorizes
@@ -178,6 +192,17 @@ Apply the highest rung in scope; otherwise name it in one line at the end.
   changes may not need new unit tests, but always run the relevant
   validation, render, or drift checks. Once relevant checks pass, broaden or
   repeat testing only for new changes, failures, or unresolved concerns.
+- When editors or verifiers work in parallel, give each the same validation
+  command and require its exit code in the handoff.
+- Before E2E, verify that required services respond on their ports and set a
+  fail-fast flag such as `--max-failures`.
+- For Moon downstream probes on shared hosts, use
+  `moon exec --ci true --on-failure bail` and verify that dev, E2E, and DB
+  tasks are excluded.
+- Run file-editing delegates in separate worktrees, including
+  `delegate_task` with `isolation: "worktree"`, or run them serially. Use
+  the same isolation for shared mutable runtimes such as a dev pod or DB
+  fixture, even when the checkouts are separate.
 - Before calling a test failure a regression, run the same command on the
   clean base and diff the failures. Never use bare `git stash` across
   worktrees; use a WIP commit.
@@ -201,6 +226,8 @@ Apply the highest rung in scope; otherwise name it in one line at the end.
   does not authorize pushing; push only when asked or when the task names a
   push. An explicit stop point such as "don't commit yet", or a rule to leave
   a repo uncommitted, takes precedence.
+- Confirm the branch before committing in a worktree. On long delegated
+  runs, commit WIP periodically so token expiry doesn't strand edits.
 - PR descriptions lead with the problem in my words, then what changed. Not a
   file inventory.
 

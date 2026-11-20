@@ -25,7 +25,7 @@ Using Codex inside workflows and subagents (the model parameter only takes Claud
 - Spawn a thin Claude wrapper agent with `model: 'sonnet', effort: 'low'` whose prompt instructs it to write a self-contained codex prompt, run `codex exec` via Bash, and return the report (use `schema` on the wrapper to get structured output back).
 - Always label these agents with a `Codex:` prefix, e.g. `{label: 'Codex:review-auth'}`: the workflow UI shows the wrapper's Claude model, so the label is the only indication the real worker is Codex. Do not claim a specific model unless verified for that run.
 - Codex runs can exceed Bash's 10-minute timeout (600s). In a wrapper subagent, run `codex exec` in the foreground with an explicit Bash `timeout`. Background it only from the main agent, which is still running when the completion notice arrives (see Waiting on long work).
-- Parallel agents that edit files (Claude or Codex) must use `isolation: 'worktree'` or run serially, so their edits don't collide in the shared checkout. If they did share a tree, re-run the combined checks and diff `git status` against each agent's claimed files.
+- If editing agents shared a checkout, re-run the combined checks and compare `git status` with each agent's claimed files.
 - Workflow token budgets only count Claude tokens; codex work is free and invisible to `budget.spent()`.
 
 ## Waiting on long work
