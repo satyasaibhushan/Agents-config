@@ -31,6 +31,8 @@ An `exec` acknowledgment only proves command submission. Check completion and ex
 5. Do not routinely purge or restart healthy workloads. If DevDock fails, report the operation ID and useful error to the user. Do not bypass it with direct infrastructure changes.
 6. If a start hangs in building with no helm output, check that `lastContext.namespace` in the checkout's `.devspace/cache.yaml` matches the target namespace; a mismatch opens an interactive picker that waits forever.
 
+After a second pod loss or eviction in a session, stop retrying. Read pod termination state and eviction events. Check each service process's RSS in `/proc/<pid>/status` if it is still available. Label the cause as confirmed or assumed, and distinguish per-process RSS from total container memory.
+
 Before `start` or `build_start`, confirm required environment files exist on the execution machine without printing their contents. Linking machines does not copy configuration. If requirements or Dockerfiles changed since the deployed image, use `build_start` rather than `start`; observe the existing restart and shared-state approval rules.
 
 ## Machines
@@ -96,6 +98,8 @@ When verification is blocked by the off window:
 ## Routing and verification
 
 Run every changed repository in development. Set the relevant environment values to `saibhushan` so API calls reach that user's development pods; preserve unrelated values. Inspect actual network requests and pod logs. A personal frontend URL can still call UAT, so confirm the changed service handled the request. A passing `/auth` phase proves OIDC only, not that the service handled it.
+
+If another service's primary checkout is dirty or on an unrelated branch, leave it in place. Verify with a replica or override, or report the check as not run.
 
 | Surface | Development | UAT-US |
 | --- | --- | --- |
