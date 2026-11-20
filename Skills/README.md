@@ -25,8 +25,8 @@ python3 ~/Agents/Config/scripts/apply.py --plan --only skills   # read-only drif
 
 Beyond linking, it detects drift: skills that exist live but not in canon can be imported (**keep**) or removed (**overwrite**); a symlink someone replaced with an edited real folder can have its edits imported into canon and relinked, or be reverted. See the root README for the full model.
 
-Agents, Claude Code, and Cursor link each skill directly to the canonical
-folder. Codex links each skill to a generated view under
+Agents, Claude Code, Cursor, and Antigravity (`~/.gemini/config/skills`) link
+each skill directly to the canonical folder. Codex links each skill to a generated view under
 `~/.local/state/agents-config/generated/codex/skills/`. The generated view
 keeps the canonical files and translates provider metadata, such as
 `disable-model-invocation: true`, into Codex's `agents/openai.yaml` policy. It

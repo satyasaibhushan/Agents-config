@@ -63,7 +63,9 @@ print('Applied canonical development permissions for', profile_name)
 # Reuse the canonical reconciler for provider instructions and skill discovery.
 targets, default_source = api['load_instruction_targets']()
 writes = []
-for provider in ['claude-code', 'codex']:
+for provider in ['claude-code', 'codex', 'antigravity']:
+    if provider not in targets:
+        continue
     entry = targets[provider]
     content, _ = api['render_instruction'](api['instruction_sources'](entry, profile, default_source))
     writes.append((provider, api['instruction_path'](entry['path'], home), content))

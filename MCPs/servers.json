@@ -19,7 +19,7 @@
     },
     "db-mcp": {
       "platforms": ["darwin"],
-      "clients": ["cursor", "claude-code", "claude-desktop", "codex"],
+      "clients": ["cursor", "claude-code", "claude-desktop", "codex", "antigravity"],
       "profiles": ["mac-admin", "devbox-admin", "vmockbox-admin", "devbox-agent"],
       "security": "reads shared databases via profiles",
       "requires": {
@@ -50,7 +50,7 @@
     },
     "elasticsearch": {
       "platforms": ["darwin"],
-      "clients": ["cursor", "claude-code", "claude-desktop", "codex"],
+      "clients": ["cursor", "claude-code", "claude-desktop", "codex", "antigravity"],
       "security": "policy-enforced Elasticsearch access via named profiles",
       "requires": {
         "executables": ["uv"],
@@ -86,7 +86,7 @@
       }
     },
     "new-relic": {
-      "clients": ["cursor", "claude-code", "claude-desktop", "codex"],
+      "clients": ["cursor", "claude-code", "claude-desktop", "codex", "antigravity"],
       "profiles": ["mac-admin", "devbox-admin", "vmockbox-admin", "devbox-agent"],
       "security": "external service, sends queries to New Relic",
       "requires": {
@@ -122,7 +122,7 @@
       }
     },
     "jira-attachments": {
-      "clients": ["cursor", "claude-code", "claude-desktop", "codex"],
+      "clients": ["cursor", "claude-code", "claude-desktop", "codex", "antigravity"],
       "profiles": ["mac-admin", "devbox-admin", "vmockbox-admin", "devbox-agent"],
       "security": "reads Jira, downloads attachments locally",
       "requires": {
@@ -156,7 +156,7 @@
       }
     },
     "sqrl": {
-      "clients": ["codex", "claude-desktop"],
+      "clients": ["codex", "claude-desktop", "antigravity"],
       "requires": {"executables": ["sqrl"]},
       "config": {
         "command": "sqrl",
@@ -165,7 +165,7 @@
     },
     "devdock": {
       "platforms": ["darwin"],
-      "clients": ["claude-code", "codex", "claude-desktop"],
+      "clients": ["claude-code", "codex", "claude-desktop", "antigravity"],
       "security": "controls local dev containers (read-write scope)",
       "requires": {
         "executables": ["node"],
@@ -190,7 +190,8 @@
       "codex": { "default_tools_approval_mode": "approve" },
       "clients": [
         "claude-code",
-        "codex"
+        "codex",
+        "antigravity"
       ],
       "platforms": [
         "linux"
@@ -226,7 +227,8 @@
       "codex": { "default_tools_approval_mode": "approve" },
       "clients": [
         "claude-code",
-        "codex"
+        "codex",
+        "antigravity"
       ],
       "platforms": [
         "linux"
@@ -253,7 +255,8 @@
       "codex": { "default_tools_approval_mode": "approve" },
       "clients": [
         "claude-code",
-        "codex"
+        "codex",
+        "antigravity"
       ],
       "platforms": [
         "linux"
@@ -278,7 +281,7 @@
       }
     },
     "jev": {
-      "clients": ["cursor", "claude-code", "claude-desktop", "codex"],
+      "clients": ["cursor", "claude-code", "claude-desktop", "codex", "antigravity"],
       "platforms": ["darwin", "linux"],
       "profiles": ["mac-admin", "vmockbox-admin"],
       "requires": {
@@ -295,7 +298,7 @@
       }
     },
     "elicit": {
-      "clients": ["claude-code", "codex"],
+      "clients": ["claude-code", "codex", "antigravity"],
       "platforms": ["darwin", "linux"],
       "profiles": ["mac-admin", "vmockbox-admin", "devbox-admin"],
       "requires": {
@@ -313,7 +316,8 @@
       "clients": [
         "cursor",
         "claude-code",
-        "codex"
+        "codex",
+        "antigravity"
       ],
       "platforms": [
         "darwin",
@@ -344,7 +348,7 @@
     },
     "nook": {
       "platforms": ["darwin"],
-      "clients": ["cursor", "claude-code", "codex"],
+      "clients": ["cursor", "claude-code", "codex", "antigravity"],
       "profiles": ["mac-admin"],
       "security": "drives the running Nook browser: reads pages, runs JavaScript in them, and opens and closes its own tabs in the Agent space, signed out or with a one-way copy of a named space's cookies",
       "requires": {

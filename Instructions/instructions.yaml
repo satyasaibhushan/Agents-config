@@ -18,3 +18,5 @@ targets:
     path: ~/.codex/AGENTS.md
   cursor:
     path: ~/AGENTS.md
+  antigravity:
+    path: ~/.gemini/AGENTS.md

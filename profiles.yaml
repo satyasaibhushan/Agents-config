@@ -25,7 +25,7 @@ profiles:
     fragments: [base.md, mac.md, hindsight.md, decisions.md]
     mcps: default-allow
     skills: default-allow
-    skill_clients: [claude-code, codex, cursor]
+    skill_clients: [claude-code, codex, cursor, antigravity]
   devbox-admin:
     platform: linux
     mode: read-write

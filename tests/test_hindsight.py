@@ -15,7 +15,7 @@ class FeedbackSetupTest(unittest.TestCase):
         self.home=Path(self.tmp.name)
 
     def test_idempotent_preserving_settings(self):
-        for client,text in [('codex','model = "existing"\n[mcp_servers.other]\ncommand="other"\n'),('cursor','{"approvals":"existing","mcpServers":{"other":{"command":"other"}}}'),('claude-code','{"projects":{"private":{}},"mcpServers":{}}'),('opencode','{ // keep comment\n "model":"existing",\n}')]:
+        for client,text in [('codex','model = "existing"\n[mcp_servers.other]\ncommand="other"\n'),('cursor','{"approvals":"existing","mcpServers":{"other":{"command":"other"}}}'),('claude-code','{"projects":{"private":{}},"mcpServers":{}}'),('antigravity','{"mcpServers":{"other":{"command":"other"}}}'),('opencode','{ // keep comment\n "model":"existing",\n}')]:
             desired=self.setup.registration(self.home,client)
             after=self.setup.add_entry(text,client,desired)
             self.assertEqual(after,self.setup.add_entry(after,client,desired))

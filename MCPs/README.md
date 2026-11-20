@@ -6,6 +6,7 @@
 - Claude Code: `~/.claude.json`
 - Claude Desktop: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - Codex: `~/.codex/config.toml`
+- Antigravity: `~/.gemini/config/mcp_config.json` (plus symlinks from existing `~/.t3/userdata/providers/antigravity/*/config/mcp_config.json` profiles)
 
 ## Files
 

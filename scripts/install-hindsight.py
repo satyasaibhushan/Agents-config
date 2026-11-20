@@ -147,6 +147,7 @@ def config_paths(home):
     targets = [('codex', home / '.codex/config.toml'),
                ('claude-code', home / '.claude.json'),
                ('cursor', home / '.cursor/mcp.json'),
+               ('antigravity', home / '.gemini/config/mcp_config.json'),
                ('opencode', home / '.config/opencode/opencode.jsonc')]
     # Only existing hub profiles are enrolled. Never create another machine's profile.
     for suffix in ('zai', 'copilot', 'cursor'):
@@ -196,9 +197,10 @@ def install(home, instructions=False):
     base = home / '.local/share/hindsight-mcp'
     updates = []
     for client,path in config_paths(home):
-        old = path.read_text() if path.exists() and owned(path) else ('' if client == 'codex' else '{}')
+        raw = path.read_text() if path.exists() and owned(path) else ''
+        old = raw if raw.strip() else ('' if client == 'codex' else '{}')
         new = add_entry(old, client, registration(home, client))
-        if new != old: updates.append((path, old, new))
+        if new != raw: updates.append((path, raw, new))
     mkdir(base, private=True)
     manifest = (SOURCE / 'package.json').read_text()
     lock = (SOURCE / 'package-lock.json').read_text()

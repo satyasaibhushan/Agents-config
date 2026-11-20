@@ -127,6 +127,12 @@ def json_config_for_client(servers, client, env):
         if client == "cursor" and config.get("type") == "http":
             config.pop("type", None)
 
+        if client == "antigravity":
+            config.pop("type", None)
+            if "command" in entry.get(client, {}) and "url" not in entry.get(client, {}):
+                config.pop("url", None)
+                config.pop("headers", None)
+
         if client == "claude-desktop":
             config.pop("type", None)
             # Claude Desktop only supports stdio servers. When a command-based
@@ -260,6 +266,7 @@ def main(argv=None):
     write_json(output_dir / "cursor.mcp.json", json_config_for_client(servers, "cursor", env))
     write_json(output_dir / "claude-code.json", json_config_for_client(servers, "claude-code", env))
     write_json(output_dir / "claude-desktop.json", json_config_for_client(servers, "claude-desktop", env))
+    write_json(output_dir / "antigravity.mcp.json", json_config_for_client(servers, "antigravity", env))
     toml_path = output_dir / "codex-mcp.toml"
     toml_path.write_text(codex_config(servers, env))
     os.chmod(toml_path, 0o600)

@@ -29,6 +29,8 @@ targets:
     path: ~/.codex/AGENTS.md
   cursor:
     path: ~/AGENTS.md                # generic AGENTS.md convention
+  antigravity:
+    path: ~/.gemini/AGENTS.md
 ```
 
 - `extra` — a provider-only fragment appended after the shared ones.

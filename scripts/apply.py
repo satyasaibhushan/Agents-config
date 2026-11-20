@@ -82,7 +82,7 @@ SKILLS_MANIFEST = SKILLS_ROOT / "skills.json"
 INSTRUCTIONS_ROOT = CONFIG_ROOT / "Instructions"
 INSTRUCTIONS_MANIFEST = INSTRUCTIONS_ROOT / "instructions.yaml"
 
-MCP_CLIENTS = ["cursor", "claude-code", "claude-desktop", "codex"]
+MCP_CLIENTS = ["cursor", "claude-code", "claude-desktop", "codex", "antigravity"]
 # Claude Desktop ships for macOS only; on Linux its config path is never read,
 # so apply neither plans nor writes it there.
 MCP_CLIENT_PLATFORMS = {"claude-desktop": {"darwin"}}
@@ -91,6 +91,7 @@ SKILL_AGENTS = {
     "claude-code": ".claude/skills",
     "codex": ".codex/skills",
     "cursor": ".cursor/skills",
+    "antigravity": ".gemini/config/skills",
 }
 # Agent-managed skills that must never be treated as drift (see Skills/README.md).
 SKILL_IGNORE = {
@@ -134,6 +135,7 @@ def mcp_config_paths(home, platform=None):
         "claude-code": home / ".claude.json",
         "claude-desktop": home / "Library/Application Support/Claude/claude_desktop_config.json",
         "codex": home / ".codex/config.toml",
+        "antigravity": home / ".gemini/config/mcp_config.json",
     }
     if platform is None:
         return paths
@@ -176,9 +178,12 @@ def read_live_mcps(client, path):
     if not path.exists():
         return {}
     try:
+        raw = path.read_text()
+        if not raw.strip():
+            return {}
         if client == "codex":
-            return tomllib.loads(path.read_text()).get("mcp_servers", {}) or {}
-        data = json.loads(path.read_text())
+            return tomllib.loads(raw).get("mcp_servers", {}) or {}
+        data = json.loads(raw)
         return data.get("mcpServers", {}) or {}
     except Exception as exc:  # unreadable config is a hard stop, not silent drift
         sys.exit(f"error: cannot parse {path}: {exc}")
@@ -220,6 +225,79 @@ def write_header_files(drift, home, stamp):
         with os.fdopen(fd, "w") as f:
             f.write(content)
         os.chmod(path, 0o600)
+
+
+def t3_antigravity_profile_config_dirs(home):
+    """Return existing T3 Code Antigravity profile config directories.
+    T3 runs each Antigravity instance with an isolated GEMINI_HOME and links
+    global skills and rules from ~/.gemini, but leaves mcp_config.json isolated.
+    Only existing profiles are enrolled; never create T3 directories."""
+    root = home / ".t3" / "userdata" / "providers" / "antigravity"
+    if not root.is_dir():
+        return []
+    dirs = []
+    for entry in sorted(root.iterdir()):
+        config = entry / "config"
+        if entry.is_dir() and not entry.is_symlink() and config.is_dir():
+            dirs.append(config)
+    return dirs
+
+
+def plan_antigravity_t3_mcp_links(home, enabled=True):
+    """-> (links, conflicts) for existing T3 Antigravity profile mcp_config.json
+    files that should symlink to ~/.gemini/config/mcp_config.json."""
+    if not enabled:
+        return [], []
+    canonical = mcp_config_paths(home)["antigravity"]
+    canonical_resolved = canonical.resolve()
+    canonical_servers = read_live_mcps("antigravity", canonical) if canonical.exists() else None
+    links, conflicts = [], []
+    for config_dir_path in t3_antigravity_profile_config_dirs(home):
+        link = config_dir_path / "mcp_config.json"
+        if link.is_symlink():
+            raw = link.readlink()
+            dest = (raw if raw.is_absolute() else link.parent / raw).resolve()
+            if dest == canonical_resolved:
+                continue
+            conflicts.append((link, f"symlink points elsewhere ({dest})"))
+        elif link.exists():
+            if not link.is_file():
+                conflicts.append((link, "not a regular file"))
+                continue
+            raw = link.read_text().strip()
+            if not raw:
+                links.append(link)
+                continue
+            try:
+                data = json.loads(raw)
+            except Exception:
+                conflicts.append((link, "unparseable JSON; left alone"))
+                continue
+            if (isinstance(data, dict) and set(data) <= {"mcpServers"}
+                    and not (data.get("mcpServers") or {})):
+                links.append(link)
+            elif (isinstance(data, dict) and canonical_servers is not None
+                    and norm(data.get("mcpServers") or {}) == norm(canonical_servers)):
+                links.append(link)
+            else:
+                conflicts.append((link, "has custom MCP config; left alone"))
+        else:
+            links.append(link)
+    return links, conflicts
+
+
+def write_antigravity_t3_mcp_links(links, home, stamp):
+    canonical = mcp_config_paths(home)["antigravity"]
+    if not links or not canonical.exists():
+        return []
+    linked = []
+    for link in links:
+        backup(link, home, stamp)
+        if link.exists() or link.is_symlink():
+            link.unlink()
+        link.symlink_to(canonical)
+        linked.append(link)
+    return linked
 
 
 def norm(value):
@@ -1839,8 +1917,9 @@ def write_mcp_configs(final, live_all, home, genmod, stamp):
         private_mkdir(path.parent)
         if client == "cursor":
             path.write_text(json.dumps({"mcpServers": final[client]}, indent=2) + "\n")
-        elif client in ("claude-code", "claude-desktop"):
-            data = json.loads(path.read_text()) if path.exists() else {}
+        elif client in ("claude-code", "claude-desktop", "antigravity"):
+            raw = path.read_text().strip() if path.exists() else ""
+            data = json.loads(raw) if raw else {}
             data["mcpServers"] = final[client]
             path.write_text(json.dumps(data, indent=2) + "\n")
         else:  # codex: replace only the [mcp_servers.*] tables
@@ -2127,6 +2206,18 @@ def main():
         if in_scope("mcps") else {}
     for path in header_drift:
         print(f"  header file stale: {path}")
+    antigravity_mcp_path = mcp_config_paths(home)["antigravity"]
+    antigravity_targeted = any(
+        "antigravity" in entry.get("clients", [])
+        for entry in servers_in_scope.values()
+    )
+    t3_mcp_links, t3_mcp_conflicts = plan_antigravity_t3_mcp_links(
+        home, enabled=antigravity_mcp_path.exists() or antigravity_targeted) \
+        if in_scope("mcps") else ([], [])
+    for path in t3_mcp_links:
+        print(f"  t3 antigravity mcp link needed: {path} -> {antigravity_mcp_path}")
+    for path, reason in t3_mcp_conflicts:
+        print(f"  t3 antigravity mcp link skipped: {path} ({reason})")
     skill_drift = print_matrix("SKILL DRIFT PLAN", skill_items, list(SKILL_AGENTS)) \
         if in_scope("skills") else {}
     instr_drift = print_instructions_plan(instr_items) \
@@ -2135,7 +2226,8 @@ def main():
         print_memory_plan(memory_drift, memory_files)
 
     if not mcp_drift and not skill_drift and not instr_drift \
-            and not memory_drift and not memory_files and not header_drift:
+            and not memory_drift and not memory_files and not header_drift \
+            and not t3_mcp_links:
         print("\nEverything in sync. Nothing to do.")
         if not args.plan:
             record_renders(home, genmod, env, profile, args.platform, render_scope)
@@ -2230,6 +2322,12 @@ def main():
     for path in header_drift:
         any_change = True
         print(f"  header file: write {path}")
+    active_t3_mcp_links = t3_mcp_links if (
+        antigravity_mcp_path.exists() or bool(final.get("antigravity"))
+    ) else []
+    for path in active_t3_mcp_links:
+        any_change = True
+        print(f"  t3 antigravity mcp link: {path} -> {antigravity_mcp_path}")
     for name, clients, state in mcp_skipped + skill_skipped + instr_skipped:
         print(f"  skipped: {name} ({state} in {', '.join(clients)}) — will re-ask next apply")
     for name, clients, state, reason in sync_skipped:
@@ -2257,6 +2355,7 @@ def main():
         SERVERS_PATH.write_text(
             json.dumps({"version": 1, "servers": new_servers}, indent=2) + "\n")
     changed_clients = write_mcp_configs(final, live_all, home, genmod, stamp)
+    linked_t3_mcps = write_antigravity_t3_mcp_links(active_t3_mcp_links, home, stamp)
     write_header_files(header_drift, home, stamp)
     applied_skills = apply_skill_ops(skill_ops, home, stamp)
     if new_skill_targets != skill_targets:
@@ -2293,6 +2392,8 @@ def main():
         print(f"  instructions migrated: {provider} — removed {legacy}")
     if changed_clients:
         print(f"  providers rewritten: {', '.join(changed_clients)}")
+    for path in linked_t3_mcps:
+        print(f"  t3 antigravity mcp linked: {path} -> {antigravity_mcp_path}")
     for client in memory_drift:
         print(f"  memory off: {client}")
     for path in header_drift:

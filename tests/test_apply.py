@@ -185,6 +185,97 @@ class McpPlanTest(ApplyTestCase):
         )
         self.assertEqual(parsed["elasticsearch"]["command"], "uv")
 
+    def test_antigravity_drops_type_and_handles_empty_config(self):
+        servers = {
+            "remote": {
+                "clients": ["antigravity"],
+                "config": {
+                    "type": "http",
+                    "url": "https://example.com/mcp",
+                    "headers": {"Authorization": "Bearer ${DEMO_KEY}"},
+                },
+            },
+            "local": {
+                "clients": ["antigravity"],
+                "config": {
+                    "type": "stdio",
+                    "command": "node",
+                    "args": ["server.js"],
+                    "env": {"KEY": "${DEMO_KEY}"},
+                },
+            },
+        }
+        self.write(".gemini/config/mcp_config.json", "")
+        items, live_all = self.plan(servers=servers)
+        self.assertEqual(live_all["antigravity"], {})
+        self.assertEqual(items["remote"]["antigravity"]["state"], self.apply.MISSING)
+        self.assertEqual(
+            items["remote"]["antigravity"]["desired"],
+            {"url": "https://example.com/mcp",
+             "headers": {"Authorization": "Bearer secret-value-123"}},
+        )
+        self.assertEqual(
+            items["local"]["antigravity"]["desired"],
+            {"command": "node", "args": ["server.js"],
+             "env": {"KEY": "secret-value-123"}},
+        )
+
+    def test_antigravity_write_preserves_extra_keys_and_sets_private_mode(self):
+        path = self.write(".gemini/config/mcp_config.json", "")
+        live = {client: {} for client in self.apply.MCP_CLIENTS}
+        final = {client: {} for client in self.apply.MCP_CLIENTS}
+        final["antigravity"] = {"local": {"command": "node", "args": ["index.js"]}}
+
+        changed = self.apply.write_mcp_configs(
+            final, live, self.home, self.genmod, "20261121-000001")
+        self.assertEqual(changed, ["antigravity"])
+        self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(json.loads(path.read_text()), {"mcpServers": final["antigravity"]})
+
+        path.write_text(json.dumps({"extra": True, "mcpServers": final["antigravity"]}))
+        live["antigravity"] = dict(final["antigravity"])
+        final["antigravity"]["remote"] = {"url": "https://example.com/mcp"}
+        self.apply.write_mcp_configs(final, live, self.home, self.genmod, "20261121-000002")
+        saved = json.loads(path.read_text())
+        self.assertTrue(saved["extra"])
+        self.assertIn("remote", saved["mcpServers"])
+
+    def test_t3_antigravity_mcp_links_existing_profiles_safely(self):
+        canonical = self.write_json(
+            ".gemini/config/mcp_config.json",
+            {"mcpServers": {"local": {"command": "node"}}},
+        )
+        p_empty = self.write(
+            ".t3/userdata/providers/antigravity/aaaa/config/mcp_config.json", "")
+        p_missing = self.home / ".t3/userdata/providers/antigravity/bbbb/config/mcp_config.json"
+        p_missing.parent.mkdir(parents=True)
+        p_custom = self.write_json(
+            ".t3/userdata/providers/antigravity/cccc/config/mcp_config.json",
+            {"mcpServers": {"custom": {"command": "custom"}}},
+        )
+        p_foreign_target = self.write("elsewhere.json", "{}")
+        p_foreign = self.home / ".t3/userdata/providers/antigravity/dddd/config/mcp_config.json"
+        p_foreign.parent.mkdir(parents=True)
+        p_foreign.symlink_to(p_foreign_target)
+
+        links, conflicts = self.apply.plan_antigravity_t3_mcp_links(self.home)
+        self.assertEqual(links, [p_empty, p_missing])
+        self.assertEqual([c[0] for c in conflicts], [p_custom, p_foreign])
+
+        linked = self.apply.write_antigravity_t3_mcp_links(links, self.home, "20261121-000003")
+        self.assertEqual(linked, [p_empty, p_missing])
+        self.assertTrue(p_empty.is_symlink())
+        self.assertEqual(p_empty.resolve(), canonical.resolve())
+        self.assertTrue(p_missing.is_symlink())
+        self.assertEqual(p_missing.resolve(), canonical.resolve())
+        # custom and foreign were left untouched
+        self.assertFalse(p_custom.is_symlink())
+        self.assertEqual(p_foreign.resolve(), p_foreign_target.resolve())
+        # re-planning sees linked profiles as in sync
+        links_after, conflicts_after = self.apply.plan_antigravity_t3_mcp_links(self.home)
+        self.assertEqual(links_after, [])
+        self.assertEqual([c[0] for c in conflicts_after], [p_custom, p_foreign])
+
 
 class SkillPlanTest(ApplyTestCase):
     def setUp(self):
@@ -606,7 +697,7 @@ class SkillPlanTest(ApplyTestCase):
         self.assertEqual(ops, [])
         self.assertEqual(
             new_targets["demo"]["clients"],
-            ["agents", "claude-code", "codex"],
+            ["agents", "claude-code", "codex", "antigravity"],
         )
         self.assertEqual(skipped, [])
 
@@ -846,7 +937,7 @@ class ProfileTest(ApplyTestCase):
             self.assertIn(name, profiles)
         self.assertEqual(
             profiles["mac-admin"]["skill_clients"],
-            ["claude-code", "codex", "cursor"],
+            ["claude-code", "codex", "cursor", "antigravity"],
         )
         agent = profiles["devbox-agent"]
         self.assertEqual(agent["mode"], "read-only")
