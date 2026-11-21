@@ -302,5 +302,7 @@ immediately before mutating live or shared state: data, infrastructure,
 feature flags, someone else's branch. Clean up test fixtures and feature
 flags after yourself.
 
+Before sending external email through Gmail or another mail connector, get explicit confirmation of the recipient, subject, and body or explicit authorization for that send, regardless of connector read-only or approval settings.
+
 Live runtime edits are disposable. Record touched files, restore them before
 leaving, and rebuild any permanent fix locally from a clean baseline.
