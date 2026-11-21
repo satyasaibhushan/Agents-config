@@ -2,7 +2,12 @@
 """Tests for scripts/apply.py. Stdlib only. Every test runs against a
 temporary home directory so a test run can never touch real agent config.
 
-Run:  python3 -m unittest discover -s tests
+Run this module (stdlib only):
+  python3 -m unittest tests/test_apply.py
+
+Run the full Python test suite (Python 3.11+ with pytest for test_install_*.py):
+  uv run --python 3.11 --with pytest python3 -m unittest discover -s tests
+  uv run --python 3.11 --with pytest python3 -m pytest
 """
 
 import json
