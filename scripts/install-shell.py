@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Link shared shell configuration without replacing local startup files."""
 
+import argparse
 import os
 from pathlib import Path
 import shlex
@@ -77,9 +78,14 @@ def link_helpers(bin_dir, runner, names=HELPERS):
         print('linked: ' + str(link))
 
 
-if __name__ == '__main__':
+def main():
+    argparse.ArgumentParser(description=__doc__).parse_args()
     home = Path.home()
     source = Path(__file__).resolve().parents[1] / 'Shell/shared.sh'
     install(home, source, Path(os.environ.get('ZDOTDIR') or home))
     link_helpers(home / '.local/bin', source.parent / 'run-helper')
     link_helpers(home / '.local/bin', source.parent / 'env-helper', ENV_HELPERS)
+
+
+if __name__ == '__main__':
+    main()
